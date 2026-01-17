@@ -1,0 +1,13 @@
+# JitPack build configuration for OpenMDM Android
+
+# Use JDK 17 (required for Android Gradle Plugin 8.x)
+jdk:
+  - openjdk17
+
+# Build commands
+install:
+  - ./gradlew :library:publishToMavenLocal
+
+# Environment variables
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"

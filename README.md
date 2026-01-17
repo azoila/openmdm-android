@@ -1,5 +1,8 @@
 # OpenMDM Android
 
+[![JitPack](https://jitpack.io/v/azoila/openmdm-android.svg)](https://jitpack.io/#azoila/openmdm-android)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 Official Android components for [OpenMDM](https://github.com/openmdm/openmdm) - the embeddable Mobile Device Management SDK.
 
 > [!CAUTION]
@@ -37,19 +40,42 @@ cd openmdm-android
 
 Best for: Adding MDM capabilities to an existing app.
 
+**Step 1: Add JitPack repository**
+
 ```kotlin
 // settings.gradle.kts
 dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        google()
+        mavenCentral()
         maven { url = uri("https://jitpack.io") }
     }
 }
+```
 
-// build.gradle.kts
-dependencies {
-    implementation("com.github.openmdm:openmdm-android:library:0.1.0")
+Or in your root `build.gradle.kts`:
+
+```kotlin
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
 }
 ```
+
+**Step 2: Add the dependency**
+
+```kotlin
+// app/build.gradle.kts
+dependencies {
+    implementation("com.github.azoila.openmdm-android:library:0.1.0")
+}
+```
+
+> **Note**: Replace `0.1.0` with the latest release version or use `main-SNAPSHOT` for the latest development version.
 
 ## Library Usage
 
@@ -277,6 +303,40 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 This Android agent is designed to work with [OpenMDM Server](https://github.com/openmdm/openmdm) v0.2.0+.
 
 The API protocol is defined in the `@openmdm/client` TypeScript package. Keep the Kotlin models in sync when updating.
+
+## JitPack Publishing
+
+The library module is published via [JitPack](https://jitpack.io/#azoila/openmdm-android).
+
+### Using a Release Version
+
+Releases are automatically available on JitPack when a GitHub release is created:
+
+```kotlin
+implementation("com.github.azoila.openmdm-android:library:0.1.0")
+```
+
+### Using a Specific Commit
+
+You can also use any commit hash:
+
+```kotlin
+implementation("com.github.azoila.openmdm-android:library:abc1234")
+```
+
+### Using the Latest Development Version
+
+For the latest unreleased changes from the main branch:
+
+```kotlin
+implementation("com.github.azoila.openmdm-android:library:main-SNAPSHOT")
+```
+
+> **Note**: SNAPSHOT versions are cached for 24 hours. Use `--refresh-dependencies` to force update.
+
+### Build Status
+
+Check the JitPack build status at: https://jitpack.io/#azoila/openmdm-android
 
 ## Contributing
 
