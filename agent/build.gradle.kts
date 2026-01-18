@@ -54,6 +54,9 @@ android {
 }
 
 dependencies {
+    // OpenMDM Library
+    implementation(project(":library"))
+
     // Core Android
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

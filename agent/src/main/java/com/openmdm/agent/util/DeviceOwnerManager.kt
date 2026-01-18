@@ -12,6 +12,12 @@ import android.os.PowerManager
 import android.os.UserManager
 import android.provider.Settings
 import com.openmdm.agent.receiver.MDMDeviceAdminReceiver
+import com.openmdm.library.device.HardwareManager
+import com.openmdm.library.device.KioskManager
+import com.openmdm.library.device.NetworkManager
+import com.openmdm.library.device.RestrictionManager
+import com.openmdm.library.device.ScreenManager
+import com.openmdm.library.file.FileDeploymentManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -550,5 +556,83 @@ class DeviceOwnerManager @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    // ============================================
+    // Manager Accessors (Library Integration)
+    // ============================================
+
+    private var _hardwareManager: HardwareManager? = null
+    private var _screenManager: ScreenManager? = null
+    private var _kioskManager: KioskManager? = null
+    private var _restrictionManager: RestrictionManager? = null
+    private var _networkManager: NetworkManager? = null
+    private var _fileDeploymentManager: FileDeploymentManager? = null
+
+    /**
+     * Get HardwareManager for WiFi, Bluetooth, GPS, USB control
+     */
+    fun getHardwareManager(): HardwareManager {
+        return _hardwareManager ?: HardwareManager.create(context, adminComponent).also {
+            _hardwareManager = it
+        }
+    }
+
+    /**
+     * Get ScreenManager for screenshot, timeout, brightness control
+     */
+    fun getScreenManager(): ScreenManager {
+        return _screenManager ?: ScreenManager.create(context, adminComponent).also {
+            _screenManager = it
+        }
+    }
+
+    /**
+     * Get KioskManager for lock task mode and kiosk controls
+     */
+    fun getKioskManager(): KioskManager {
+        return _kioskManager ?: KioskManager.create(context, adminComponent).also {
+            _kioskManager = it
+        }
+    }
+
+    /**
+     * Get RestrictionManager for user restrictions
+     */
+    fun getRestrictionManager(): RestrictionManager {
+        return _restrictionManager ?: RestrictionManager.create(context, adminComponent).also {
+            _restrictionManager = it
+        }
+    }
+
+    /**
+     * Get NetworkManager for WiFi network configuration
+     */
+    fun getNetworkManager(): NetworkManager {
+        return _networkManager ?: NetworkManager.create(context, adminComponent).also {
+            _networkManager = it
+        }
+    }
+
+    /**
+     * Get FileDeploymentManager for file downloads and deployment
+     */
+    fun getFileDeploymentManager(): FileDeploymentManager {
+        return _fileDeploymentManager ?: FileDeploymentManager.create(context).also {
+            _fileDeploymentManager = it
+        }
+    }
+
+    /**
+     * Clean up manager resources
+     */
+    fun destroy() {
+        _hardwareManager?.destroy()
+        _hardwareManager = null
+        _screenManager = null
+        _kioskManager = null
+        _restrictionManager = null
+        _networkManager = null
+        _fileDeploymentManager = null
     }
 }
