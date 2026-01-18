@@ -7,6 +7,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.media.AudioManager
 import android.os.Build
+import android.os.IBinder
 import android.os.UserManager
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
@@ -17,8 +18,15 @@ import com.openmdm.agent.data.*
 import com.openmdm.agent.ui.MainActivity
 import com.openmdm.agent.util.DeviceInfoCollector
 import com.openmdm.agent.util.DeviceOwnerManager
+import com.openmdm.library.command.CommandType
+import com.openmdm.library.file.FileDeployment
+import com.openmdm.library.policy.KioskConfig
+import com.openmdm.library.policy.PolicyMapper
+import com.openmdm.library.policy.WifiNetworkConfig
+import com.openmdm.library.policy.WifiSecurityType
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collect
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
@@ -568,10 +576,151 @@ class MDMService : LifecycleService() {
             }
 
             "setWifi" -> {
-                // WiFi configuration requires special handling
+                val enabled = command.payload?.get("enabled") as? Boolean ?: true
+                val result = deviceOwnerManager.getHardwareManager().setWifiEnabled(enabled)
+                if (result.isSuccess) {
+                    CommandResult(true, "WiFi ${if (enabled) "enabled" else "disabled"}")
+                } else {
+                    CommandResult(false, result.exceptionOrNull()?.message ?: "WiFi control failed")
+                }
+            }
+
+            "setBluetooth" -> {
+                val enabled = command.payload?.get("enabled") as? Boolean ?: true
+                val result = deviceOwnerManager.getHardwareManager().setBluetoothEnabled(enabled)
+                if (result.isSuccess) {
+                    CommandResult(true, "Bluetooth ${if (enabled) "enabled" else "disabled"}")
+                } else {
+                    CommandResult(false, result.exceptionOrNull()?.message ?: "Bluetooth control failed")
+                }
+            }
+
+            "setGps", "setLocation" -> {
+                val enabled = command.payload?.get("enabled") as? Boolean ?: true
+                val result = deviceOwnerManager.getHardwareManager().setGpsEnabled(enabled)
+                if (result.isSuccess) {
+                    CommandResult(true, "GPS ${if (enabled) "enabled" else "disabled"}")
+                } else {
+                    CommandResult(false, result.exceptionOrNull()?.message ?: "GPS control failed")
+                }
+            }
+
+            "setUsb" -> {
+                val enabled = command.payload?.get("enabled") as? Boolean ?: true
+                val result = deviceOwnerManager.getHardwareManager().setUsbEnabled(enabled)
+                if (result.isSuccess) {
+                    CommandResult(true, "USB ${if (enabled) "enabled" else "disabled"}")
+                } else {
+                    CommandResult(false, result.exceptionOrNull()?.message ?: "USB control failed")
+                }
+            }
+
+            "setScreenshot" -> {
+                val disabled = command.payload?.get("disabled") as? Boolean ?: true
+                val result = deviceOwnerManager.getScreenManager().setScreenshotDisabled(disabled)
+                if (result.isSuccess) {
+                    CommandResult(true, "Screenshot ${if (disabled) "disabled" else "enabled"}")
+                } else {
+                    CommandResult(false, result.exceptionOrNull()?.message ?: "Screenshot control failed")
+                }
+            }
+
+            "setBrightness" -> {
+                val level = (command.payload?.get("level") as? Number)?.toInt() ?: 128
+                val result = deviceOwnerManager.getScreenManager().setBrightness(level)
+                if (result.isSuccess) {
+                    CommandResult(true, "Brightness set to $level")
+                } else {
+                    CommandResult(false, result.exceptionOrNull()?.message ?: "Brightness control failed")
+                }
+            }
+
+            "setScreenTimeout" -> {
+                val timeoutSeconds = (command.payload?.get("timeoutSeconds") as? Number)?.toInt() ?: 60
+                val result = deviceOwnerManager.getScreenManager().setScreenTimeout(timeoutSeconds)
+                if (result.isSuccess) {
+                    CommandResult(true, "Screen timeout set to $timeoutSeconds seconds")
+                } else {
+                    CommandResult(false, result.exceptionOrNull()?.message ?: "Screen timeout control failed")
+                }
+            }
+
+            "setRestriction" -> {
+                val restriction = command.payload?.get("restriction") as? String
+                val enabled = command.payload?.get("enabled") as? Boolean ?: true
+                if (restriction != null) {
+                    val result = deviceOwnerManager.getRestrictionManager().setRestriction(restriction, enabled)
+                    if (result.isSuccess) {
+                        CommandResult(true, "Restriction $restriction ${if (enabled) "enabled" else "disabled"}")
+                    } else {
+                        CommandResult(false, result.exceptionOrNull()?.message ?: "Restriction control failed")
+                    }
+                } else {
+                    CommandResult(false, "Restriction name required")
+                }
+            }
+
+            "configureWifi", "setWifiNetwork" -> {
                 val ssid = command.payload?.get("ssid") as? String
                 val password = command.payload?.get("password") as? String
-                CommandResult(false, "WiFi configuration not implemented")
+                val securityType = command.payload?.get("securityType") as? String ?: "WPA2"
+                val hidden = command.payload?.get("hidden") as? Boolean ?: false
+
+                if (ssid != null) {
+                    val wifiConfig = WifiNetworkConfig(
+                        ssid = ssid,
+                        password = password,
+                        securityType = when (securityType.uppercase()) {
+                            "OPEN", "NONE" -> WifiSecurityType.OPEN
+                            "WEP" -> WifiSecurityType.WEP
+                            "WPA" -> WifiSecurityType.WPA
+                            "WPA3" -> WifiSecurityType.WPA3
+                            else -> WifiSecurityType.WPA2
+                        },
+                        hidden = hidden
+                    )
+                    val result = deviceOwnerManager.getNetworkManager().addWifiNetwork(wifiConfig)
+                    if (result.isSuccess) {
+                        CommandResult(true, "WiFi network $ssid configured")
+                    } else {
+                        CommandResult(false, result.exceptionOrNull()?.message ?: "WiFi configuration failed")
+                    }
+                } else {
+                    CommandResult(false, "SSID required")
+                }
+            }
+
+            "deployFile" -> {
+                val url = command.payload?.get("url") as? String
+                val path = command.payload?.get("path") as? String
+                val hash = command.payload?.get("hash") as? String
+                val overwrite = command.payload?.get("overwrite") as? Boolean ?: true
+
+                if (url != null && path != null) {
+                    val deployment = FileDeployment(url = url, path = path, hash = hash, overwrite = overwrite)
+                    val result = deviceOwnerManager.getFileDeploymentManager().deployFileSync(deployment)
+                    if (result.isSuccess) {
+                        CommandResult(true, "File deployed to ${result.getOrNull()?.path}")
+                    } else {
+                        CommandResult(false, result.exceptionOrNull()?.message ?: "File deployment failed")
+                    }
+                } else {
+                    CommandResult(false, "URL and path required")
+                }
+            }
+
+            "deleteFile" -> {
+                val path = command.payload?.get("path") as? String
+                if (path != null) {
+                    val result = deviceOwnerManager.getFileDeploymentManager().deleteFile(path)
+                    if (result.isSuccess) {
+                        CommandResult(true, "File deleted: $path")
+                    } else {
+                        CommandResult(false, result.exceptionOrNull()?.message ?: "File deletion failed")
+                    }
+                } else {
+                    CommandResult(false, "Path required")
+                }
             }
 
             "setPolicy" -> {
@@ -625,18 +774,91 @@ class MDMService : LifecycleService() {
     }
 
     private fun applyPolicy(policy: PolicyResponse) {
-        // Apply policy settings to device
-        val settings = policy.settings
+        // Convert to typed PolicySettings
+        val settings = PolicyMapper.fromMap(policy.settings)
 
-        // Kiosk mode
-        val kioskMode = settings["kioskMode"] as? Boolean ?: false
-        if (kioskMode) {
-            val mainApp = settings["mainApp"] as? String
-            // Enable kiosk mode
+        lifecycleScope.launch {
+            try {
+                // Apply kiosk mode
+                if (settings.kioskMode && settings.mainApp != null) {
+                    val kioskConfig = KioskConfig.fromPolicySettings(settings)
+                    deviceOwnerManager.getKioskManager().enterKioskMode(kioskConfig)
+                }
+
+                // Apply hardware controls
+                val hardwareManager = deviceOwnerManager.getHardwareManager()
+                settings.wifiEnabled?.let { hardwareManager.setWifiEnabled(it) }
+                settings.bluetoothEnabled?.let { hardwareManager.setBluetoothEnabled(it) }
+                settings.gpsEnabled?.let { hardwareManager.setGpsEnabled(it) }
+                settings.usbEnabled?.let { hardwareManager.setUsbEnabled(it) }
+
+                // Start hardware enforcement if any settings defined
+                if (settings.wifiEnabled != null || settings.bluetoothEnabled != null ||
+                    settings.gpsEnabled != null || settings.usbEnabled != null) {
+                    val hardwarePolicy = com.openmdm.library.policy.HardwarePolicy.fromPolicySettings(settings)
+                    hardwareManager.startEnforcement(hardwarePolicy)
+                }
+
+                // Apply screen settings
+                val screenManager = deviceOwnerManager.getScreenManager()
+                if (settings.screenshotDisabled) {
+                    screenManager.setScreenshotDisabled(true)
+                }
+                settings.screenTimeoutSeconds?.let { screenManager.setScreenTimeout(it) }
+                settings.brightnessLevel?.let { screenManager.setBrightness(it) }
+
+                // Apply restrictions
+                if (settings.restrictions.isNotEmpty()) {
+                    val restrictionManager = deviceOwnerManager.getRestrictionManager()
+                    settings.restrictions.forEach { restriction ->
+                        restrictionManager.setRestriction(restriction, true)
+                    }
+                }
+
+                // Apply individual restriction flags
+                val restrictionManager = deviceOwnerManager.getRestrictionManager()
+                if (settings.disallowInstallApps) {
+                    restrictionManager.setRestriction(UserManager.DISALLOW_INSTALL_APPS, true)
+                }
+                if (settings.disallowUninstallApps) {
+                    restrictionManager.setRestriction(UserManager.DISALLOW_UNINSTALL_APPS, true)
+                }
+                if (settings.disallowFactoryReset) {
+                    restrictionManager.setRestriction(UserManager.DISALLOW_FACTORY_RESET, true)
+                }
+                if (settings.disallowDebugging) {
+                    restrictionManager.setRestriction(UserManager.DISALLOW_DEBUGGING_FEATURES, true)
+                }
+                if (settings.disallowCamera) {
+                    deviceOwnerManager.setCameraDisabled(true)
+                }
+
+                // Apply WiFi networks
+                if (settings.wifiNetworks.isNotEmpty()) {
+                    val networkManager = deviceOwnerManager.getNetworkManager()
+                    settings.wifiNetworks.forEach { wifiConfig ->
+                        networkManager.addWifiNetwork(wifiConfig)
+                    }
+                }
+
+                // Deploy files
+                if (settings.fileDeployments.isNotEmpty()) {
+                    val fileManager = deviceOwnerManager.getFileDeploymentManager()
+                    settings.fileDeployments.forEach { fileConfig ->
+                        val deployment = FileDeployment(
+                            url = fileConfig.url,
+                            path = fileConfig.path,
+                            hash = fileConfig.hash,
+                            overwrite = fileConfig.overwrite
+                        )
+                        fileManager.deployFileSync(deployment)
+                    }
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
-
-        // Hardware controls
-        // ... apply other policy settings
     }
 
     private fun showNotification(title: String, body: String) {
