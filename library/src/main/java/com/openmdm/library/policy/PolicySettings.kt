@@ -106,6 +106,17 @@ data class PolicySettings(
     val defaultLauncherPackage: String? = null,
 
     // ============================================
+    // Launcher Settings
+    // ============================================
+    val launcherEnabled: Boolean = false,
+    val launcherMode: String = "default", // default, allowlist, blocklist
+    val launcherApps: List<LauncherAppConfig> = emptyList(),
+    val setAsDefaultLauncher: Boolean = false,
+    val showBlockedAppOverlay: Boolean = true,
+    val launcherColumns: Int = 4,
+    val launcherShowBottomBar: Boolean = true,
+
+    // ============================================
     // File Deployment
     // ============================================
     val fileDeployments: List<FileDeploymentConfig> = emptyList(),
@@ -279,6 +290,64 @@ data class KioskConfig(
                 keyguardEnabled = settings.kioskKeyguard,
                 statusBarLocked = settings.lockStatusBar,
                 immersiveMode = settings.immersiveMode
+            )
+        }
+    }
+}
+
+/**
+ * Launcher app configuration for custom app entries
+ */
+data class LauncherAppConfig(
+    val packageName: String,
+    val label: String? = null,
+    val iconUrl: String? = null,
+    val screenOrder: Int? = null,
+    val isBottomBar: Boolean = false,
+    val type: LauncherAppType = LauncherAppType.APP,
+    val url: String? = null, // For WEB type
+    val intentAction: String? = null, // For INTENT type
+    val intentUri: String? = null // For INTENT type
+)
+
+/**
+ * Type of launcher app entry
+ */
+enum class LauncherAppType {
+    /** Installed Android app */
+    APP,
+    /** Web link (opens in browser) */
+    WEB,
+    /** Custom intent (e.g., tel:, mailto:) */
+    INTENT
+}
+
+/**
+ * Launcher configuration subset
+ */
+data class LauncherConfig(
+    val enabled: Boolean = false,
+    val mode: String = "default",
+    val apps: List<LauncherAppConfig> = emptyList(),
+    val setAsDefault: Boolean = false,
+    val showBlockedOverlay: Boolean = true,
+    val columns: Int = 4,
+    val showBottomBar: Boolean = true,
+    val allowedApps: List<String> = emptyList(),
+    val blockedApps: List<String> = emptyList()
+) {
+    companion object {
+        fun fromPolicySettings(settings: PolicySettings): LauncherConfig {
+            return LauncherConfig(
+                enabled = settings.launcherEnabled,
+                mode = settings.launcherMode,
+                apps = settings.launcherApps,
+                setAsDefault = settings.setAsDefaultLauncher,
+                showBlockedOverlay = settings.showBlockedAppOverlay,
+                columns = settings.launcherColumns,
+                showBottomBar = settings.launcherShowBottomBar,
+                allowedApps = settings.allowedApps,
+                blockedApps = settings.blockedApps
             )
         }
     }

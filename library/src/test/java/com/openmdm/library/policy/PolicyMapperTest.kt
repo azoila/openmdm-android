@@ -524,6 +524,192 @@ class PolicyMapperTest {
     }
 
     // ============================================
+    // Launcher Settings Tests
+    // ============================================
+
+    @Test
+    fun `fromMap parses launcher settings`() {
+        val map = mapOf(
+            "launcherEnabled" to true,
+            "launcherMode" to "allowlist",
+            "setAsDefaultLauncher" to true,
+            "showBlockedAppOverlay" to false,
+            "launcherColumns" to 5,
+            "launcherShowBottomBar" to false
+        )
+
+        val result = PolicyMapper.fromMap(map)
+
+        assertThat(result.launcherEnabled).isTrue()
+        assertThat(result.launcherMode).isEqualTo("allowlist")
+        assertThat(result.setAsDefaultLauncher).isTrue()
+        assertThat(result.showBlockedAppOverlay).isFalse()
+        assertThat(result.launcherColumns).isEqualTo(5)
+        assertThat(result.launcherShowBottomBar).isFalse()
+    }
+
+    @Test
+    fun `fromMap parses launcher apps configuration`() {
+        val map = mapOf(
+            "launcherApps" to listOf(
+                mapOf(
+                    "packageName" to "com.example.app",
+                    "label" to "Example",
+                    "type" to "app",
+                    "screenOrder" to 1,
+                    "isBottomBar" to false
+                ),
+                mapOf(
+                    "packageName" to "com.phone",
+                    "label" to "Phone",
+                    "type" to "app",
+                    "screenOrder" to 1,
+                    "isBottomBar" to true
+                ),
+                mapOf(
+                    "packageName" to "web-google",
+                    "label" to "Google",
+                    "type" to "web",
+                    "url" to "https://google.com",
+                    "screenOrder" to 2
+                ),
+                mapOf(
+                    "packageName" to "intent-dial",
+                    "label" to "Emergency",
+                    "type" to "intent",
+                    "intentAction" to "android.intent.action.DIAL",
+                    "intentUri" to "tel:911"
+                )
+            )
+        )
+
+        val result = PolicyMapper.fromMap(map)
+
+        assertThat(result.launcherApps).hasSize(4)
+
+        val app = result.launcherApps[0]
+        assertThat(app.packageName).isEqualTo("com.example.app")
+        assertThat(app.label).isEqualTo("Example")
+        assertThat(app.type).isEqualTo(LauncherAppType.APP)
+        assertThat(app.screenOrder).isEqualTo(1)
+        assertThat(app.isBottomBar).isFalse()
+
+        val bottomBarApp = result.launcherApps[1]
+        assertThat(bottomBarApp.isBottomBar).isTrue()
+
+        val webApp = result.launcherApps[2]
+        assertThat(webApp.type).isEqualTo(LauncherAppType.WEB)
+        assertThat(webApp.url).isEqualTo("https://google.com")
+
+        val intentApp = result.launcherApps[3]
+        assertThat(intentApp.type).isEqualTo(LauncherAppType.INTENT)
+        assertThat(intentApp.intentAction).isEqualTo("android.intent.action.DIAL")
+        assertThat(intentApp.intentUri).isEqualTo("tel:911")
+    }
+
+    @Test
+    fun `fromMap launcher settings have correct defaults`() {
+        val result = PolicyMapper.fromMap(emptyMap())
+
+        assertThat(result.launcherEnabled).isFalse()
+        assertThat(result.launcherMode).isEqualTo("default")
+        assertThat(result.setAsDefaultLauncher).isFalse()
+        assertThat(result.showBlockedAppOverlay).isTrue()
+        assertThat(result.launcherColumns).isEqualTo(4)
+        assertThat(result.launcherShowBottomBar).isTrue()
+        assertThat(result.launcherApps).isEmpty()
+    }
+
+    @Test
+    fun `fromMap parses launcher mode values as-is`() {
+        // LauncherMode values are passed through as-is
+        assertThat(PolicyMapper.fromMap(mapOf("launcherMode" to "allowlist")).launcherMode).isEqualTo("allowlist")
+        assertThat(PolicyMapper.fromMap(mapOf("launcherMode" to "blocklist")).launcherMode).isEqualTo("blocklist")
+        assertThat(PolicyMapper.fromMap(mapOf("launcherMode" to "default")).launcherMode).isEqualTo("default")
+    }
+
+    @Test
+    fun `toMap includes launcher settings`() {
+        val settings = PolicySettings(
+            launcherEnabled = true,
+            launcherMode = "blocklist",
+            setAsDefaultLauncher = true,
+            launcherColumns = 6,
+            launcherApps = listOf(
+                LauncherAppConfig(
+                    packageName = "com.test",
+                    label = "Test",
+                    type = LauncherAppType.APP,
+                    screenOrder = 1,
+                    isBottomBar = true
+                )
+            )
+        )
+
+        val map = PolicyMapper.toMap(settings)
+
+        assertThat(map["launcherEnabled"]).isEqualTo(true)
+        assertThat(map["launcherMode"]).isEqualTo("blocklist")
+        assertThat(map["setAsDefaultLauncher"]).isEqualTo(true)
+        assertThat(map["launcherColumns"]).isEqualTo(6)
+
+        @Suppress("UNCHECKED_CAST")
+        val launcherApps = map["launcherApps"] as List<Map<String, Any?>>
+        assertThat(launcherApps).hasSize(1)
+        assertThat(launcherApps[0]["packageName"]).isEqualTo("com.test")
+    }
+
+    @Test
+    fun `LauncherConfig fromPolicySettings extracts launcher config`() {
+        val settings = PolicySettings(
+            launcherEnabled = true,
+            launcherMode = "allowlist",
+            allowedApps = listOf("com.app1", "com.app2"),
+            blockedApps = listOf("com.blocked"),
+            launcherApps = listOf(
+                LauncherAppConfig(packageName = "com.app1", screenOrder = 1)
+            ),
+            launcherColumns = 5,
+            launcherShowBottomBar = true
+        )
+
+        val config = LauncherConfig.fromPolicySettings(settings)
+
+        assertThat(config.enabled).isTrue()
+        assertThat(config.mode).isEqualTo("allowlist")
+        assertThat(config.allowedApps).containsExactly("com.app1", "com.app2")
+        assertThat(config.blockedApps).containsExactly("com.blocked")
+        assertThat(config.apps).hasSize(1)
+        assertThat(config.columns).isEqualTo(5)
+        assertThat(config.showBottomBar).isTrue()
+    }
+
+    @Test
+    fun `LauncherAppType enum has expected values`() {
+        assertThat(LauncherAppType.values()).asList().containsExactly(
+            LauncherAppType.APP,
+            LauncherAppType.WEB,
+            LauncherAppType.INTENT
+        )
+    }
+
+    @Test
+    fun `fromMap handles invalid launcher app config gracefully`() {
+        val map = mapOf(
+            "launcherApps" to listOf(
+                mapOf("label" to "No Package"),  // Missing required packageName
+                mapOf("packageName" to "com.valid.app")
+            )
+        )
+
+        val result = PolicyMapper.fromMap(map)
+
+        // Should only contain the valid app config
+        assertThat(result.launcherApps).hasSize(1)
+        assertThat(result.launcherApps[0].packageName).isEqualTo("com.valid.app")
+    }
+
+    // ============================================
     // Edge Cases
     // ============================================
 

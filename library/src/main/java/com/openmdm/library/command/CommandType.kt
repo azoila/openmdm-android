@@ -77,6 +77,28 @@ sealed class CommandType {
         val packageName: String
     ) : CommandType()
 
+    data class SetAppVisibility(
+        override val id: String,
+        val packageName: String,
+        val visible: Boolean
+    ) : CommandType()
+
+    data class HideApp(
+        override val id: String,
+        val packageName: String
+    ) : CommandType()
+
+    data class ShowApp(
+        override val id: String,
+        val packageName: String
+    ) : CommandType()
+
+    data class SuspendApp(
+        override val id: String,
+        val packageName: String,
+        val suspended: Boolean
+    ) : CommandType()
+
     // ============================================
     // Permission Commands
     // ============================================
@@ -321,6 +343,18 @@ sealed class CommandType {
                 )
                 "clearAppData" -> ClearAppData(id, payload?.get("packageName") as? String ?: "")
                 "clearAppCache" -> ClearAppCache(id, payload?.get("packageName") as? String ?: "")
+                "setAppVisibility" -> SetAppVisibility(
+                    id = id,
+                    packageName = payload?.get("packageName") as? String ?: "",
+                    visible = payload?.get("visible") as? Boolean ?: true
+                )
+                "hideApp" -> HideApp(id, payload?.get("packageName") as? String ?: "")
+                "showApp" -> ShowApp(id, payload?.get("packageName") as? String ?: "")
+                "suspendApp" -> SuspendApp(
+                    id = id,
+                    packageName = payload?.get("packageName") as? String ?: "",
+                    suspended = payload?.get("suspended") as? Boolean ?: true
+                )
 
                 // Permissions
                 "grantPermissions" -> GrantPermissions(

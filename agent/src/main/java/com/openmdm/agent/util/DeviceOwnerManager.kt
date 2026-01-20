@@ -14,6 +14,7 @@ import android.provider.Settings
 import com.openmdm.agent.receiver.MDMDeviceAdminReceiver
 import com.openmdm.library.device.HardwareManager
 import com.openmdm.library.device.KioskManager
+import com.openmdm.library.device.LauncherManager
 import com.openmdm.library.device.NetworkManager
 import com.openmdm.library.device.RestrictionManager
 import com.openmdm.library.device.ScreenManager
@@ -568,6 +569,7 @@ class DeviceOwnerManager @Inject constructor(
     private var _restrictionManager: RestrictionManager? = null
     private var _networkManager: NetworkManager? = null
     private var _fileDeploymentManager: FileDeploymentManager? = null
+    private var _launcherManager: LauncherManager? = null
 
     /**
      * Get HardwareManager for WiFi, Bluetooth, GPS, USB control
@@ -624,6 +626,15 @@ class DeviceOwnerManager @Inject constructor(
     }
 
     /**
+     * Get LauncherManager for app visibility and launcher controls
+     */
+    fun getLauncherManager(): LauncherManager {
+        return _launcherManager ?: LauncherManager.create(context, adminComponent).also {
+            _launcherManager = it
+        }
+    }
+
+    /**
      * Clean up manager resources
      */
     fun destroy() {
@@ -634,5 +645,6 @@ class DeviceOwnerManager @Inject constructor(
         _restrictionManager = null
         _networkManager = null
         _fileDeploymentManager = null
+        _launcherManager = null
     }
 }

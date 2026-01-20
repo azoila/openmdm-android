@@ -57,6 +57,22 @@
             </intent-filter>
         </activity>
 
+        <!-- MDM Launcher Activity (Home Screen) -->
+        <activity
+            android:name=".ui.launcher.LauncherActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:clearTaskOnLaunch="true"
+            android:stateNotNeeded="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.OpenMDMAgent">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- MDM Service -->
         <service
             android:name=".service.MDMService"

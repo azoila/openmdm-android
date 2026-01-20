@@ -20,10 +20,14 @@ import com.openmdm.agent.util.DeviceInfoCollector
 import com.openmdm.agent.util.DeviceOwnerManager
 import com.openmdm.library.command.CommandType
 import com.openmdm.library.file.FileDeployment
+import com.openmdm.library.device.VisibilityMode
 import com.openmdm.library.policy.KioskConfig
+import com.openmdm.library.policy.LauncherConfig
 import com.openmdm.library.policy.PolicyMapper
 import com.openmdm.library.policy.WifiNetworkConfig
 import com.openmdm.library.policy.WifiSecurityType
+import android.content.ComponentName
+import com.openmdm.agent.ui.launcher.LauncherActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
@@ -852,6 +856,36 @@ class MDMService : LifecycleService() {
                             overwrite = fileConfig.overwrite
                         )
                         fileManager.deployFileSync(deployment)
+                    }
+                }
+
+                // Apply launcher/app visibility settings
+                if (settings.launcherEnabled || settings.allowedApps.isNotEmpty() ||
+                    settings.blockedApps.isNotEmpty()) {
+
+                    val launcherManager = deviceOwnerManager.getLauncherManager()
+
+                    // Determine visibility mode from launcher settings
+                    val mode = when (settings.launcherMode) {
+                        "allowlist" -> VisibilityMode.ALLOWLIST
+                        "blocklist" -> VisibilityMode.BLOCKLIST
+                        else -> VisibilityMode.DEFAULT
+                    }
+
+                    // Apply app visibility policy
+                    launcherManager.applyVisibilityPolicy(
+                        allowedApps = settings.allowedApps,
+                        blockedApps = settings.blockedApps,
+                        mode = mode
+                    )
+
+                    // Set as default launcher if requested and Device Owner
+                    if (settings.setAsDefaultLauncher && deviceOwnerManager.isDeviceOwner()) {
+                        val launcherActivity = ComponentName(
+                            this@MDMService,
+                            LauncherActivity::class.java
+                        )
+                        launcherManager.setAsDefaultLauncher(launcherActivity)
                     }
                 }
 

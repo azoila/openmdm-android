@@ -560,6 +560,90 @@ class CommandTypeTest {
     }
 
     // ============================================
+    // App Visibility Commands
+    // ============================================
+
+    @Test
+    fun `parse SetAppVisibility command to hide app`() {
+        val command = CommandType.parse("cmd-120", "setAppVisibility", mapOf(
+            "packageName" to "com.example.app",
+            "visible" to false
+        ))
+
+        assertThat(command).isInstanceOf(CommandType.SetAppVisibility::class.java)
+        val visibility = command as CommandType.SetAppVisibility
+        assertThat(visibility.packageName).isEqualTo("com.example.app")
+        assertThat(visibility.visible).isFalse()
+    }
+
+    @Test
+    fun `parse SetAppVisibility command to show app`() {
+        val command = CommandType.parse("cmd-121", "setAppVisibility", mapOf(
+            "packageName" to "com.example.app",
+            "visible" to true
+        ))
+
+        val visibility = command as CommandType.SetAppVisibility
+        assertThat(visibility.visible).isTrue()
+    }
+
+    @Test
+    fun `parse HideApp command`() {
+        val command = CommandType.parse("cmd-122", "hideApp", mapOf(
+            "packageName" to "com.example.hidden"
+        ))
+
+        assertThat(command).isInstanceOf(CommandType.HideApp::class.java)
+        val hide = command as CommandType.HideApp
+        assertThat(hide.packageName).isEqualTo("com.example.hidden")
+    }
+
+    @Test
+    fun `parse ShowApp command`() {
+        val command = CommandType.parse("cmd-123", "showApp", mapOf(
+            "packageName" to "com.example.shown"
+        ))
+
+        assertThat(command).isInstanceOf(CommandType.ShowApp::class.java)
+        val show = command as CommandType.ShowApp
+        assertThat(show.packageName).isEqualTo("com.example.shown")
+    }
+
+    @Test
+    fun `parse SuspendApp command to suspend`() {
+        val command = CommandType.parse("cmd-124", "suspendApp", mapOf(
+            "packageName" to "com.example.suspended",
+            "suspended" to true
+        ))
+
+        assertThat(command).isInstanceOf(CommandType.SuspendApp::class.java)
+        val suspend = command as CommandType.SuspendApp
+        assertThat(suspend.packageName).isEqualTo("com.example.suspended")
+        assertThat(suspend.suspended).isTrue()
+    }
+
+    @Test
+    fun `parse SuspendApp command to unsuspend`() {
+        val command = CommandType.parse("cmd-125", "suspendApp", mapOf(
+            "packageName" to "com.example.app",
+            "suspended" to false
+        ))
+
+        val suspend = command as CommandType.SuspendApp
+        assertThat(suspend.suspended).isFalse()
+    }
+
+    @Test
+    fun `parse SuspendApp command defaults to suspended true`() {
+        val command = CommandType.parse("cmd-126", "suspendApp", mapOf(
+            "packageName" to "com.example.app"
+        ))
+
+        val suspend = command as CommandType.SuspendApp
+        assertThat(suspend.suspended).isTrue()
+    }
+
+    // ============================================
     // Unknown Commands
     // ============================================
 
