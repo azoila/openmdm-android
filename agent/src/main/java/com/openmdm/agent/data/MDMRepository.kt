@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.openmdm.agent.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.openmdm.agent.domain.repository.IEnrollmentRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -31,12 +32,14 @@ data class EnrollmentState(
 )
 
 /**
- * Repository for MDM state and preferences
+ * Repository for MDM state and preferences.
+ *
+ * Implements [IEnrollmentRepository] for clean architecture compatibility.
  */
 @Singleton
 class MDMRepository @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : IEnrollmentRepository {
     private object Keys {
         val DEVICE_ID = stringPreferencesKey("device_id")
         val ENROLLMENT_ID = stringPreferencesKey("enrollment_id")
@@ -47,7 +50,7 @@ class MDMRepository @Inject constructor(
         val LAST_SYNC = stringPreferencesKey("last_sync")
     }
 
-    val enrollmentState: Flow<EnrollmentState> = context.dataStore.data.map { preferences ->
+    override val enrollmentState: Flow<EnrollmentState> = context.dataStore.data.map { preferences ->
         EnrollmentState(
             isEnrolled = preferences[Keys.DEVICE_ID] != null,
             deviceId = preferences[Keys.DEVICE_ID],
@@ -60,9 +63,9 @@ class MDMRepository @Inject constructor(
         )
     }
 
-    suspend fun getEnrollmentState(): EnrollmentState = enrollmentState.first()
+    override suspend fun getEnrollmentState(): EnrollmentState = enrollmentState.first()
 
-    suspend fun saveEnrollment(
+    override suspend fun saveEnrollment(
         deviceId: String,
         enrollmentId: String,
         token: String,
@@ -81,26 +84,26 @@ class MDMRepository @Inject constructor(
         }
     }
 
-    suspend fun updateToken(token: String, refreshToken: String? = null) {
+    override suspend fun updateToken(token: String, refreshToken: String?) {
         context.dataStore.edit { preferences ->
             preferences[Keys.TOKEN] = token
             refreshToken?.let { preferences[Keys.REFRESH_TOKEN] = it }
         }
     }
 
-    suspend fun updateLastSync() {
+    override suspend fun updateLastSync() {
         context.dataStore.edit { preferences ->
             preferences[Keys.LAST_SYNC] = System.currentTimeMillis().toString()
         }
     }
 
-    suspend fun updatePolicyVersion(version: String) {
+    override suspend fun updatePolicyVersion(version: String) {
         context.dataStore.edit { preferences ->
             preferences[Keys.POLICY_VERSION] = version
         }
     }
 
-    suspend fun clearEnrollment() {
+    override suspend fun clearEnrollment() {
         context.dataStore.edit { preferences ->
             preferences.remove(Keys.DEVICE_ID)
             preferences.remove(Keys.ENROLLMENT_ID)

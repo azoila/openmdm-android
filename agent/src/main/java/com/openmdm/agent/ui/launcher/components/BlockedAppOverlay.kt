@@ -25,8 +25,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.openmdm.agent.R
+import com.openmdm.agent.ui.theme.OpenMDMAgentTheme
 import kotlinx.coroutines.delay
 
 /**
@@ -76,7 +80,7 @@ fun BlockedAppOverlay(
 
                 // Title
                 Text(
-                    text = "Access Denied",
+                    text = stringResource(R.string.blocked_title),
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -85,7 +89,7 @@ fun BlockedAppOverlay(
 
                 // Message
                 Text(
-                    text = "This application is not allowed by your organization's policy.",
+                    text = stringResource(R.string.blocked_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -107,14 +111,30 @@ fun BlockedAppOverlay(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(onClick = onDismiss) {
-                        Text("Continue")
+                        Text(stringResource(R.string.blocked_continue))
                     }
 
                     Button(onClick = onAdminClick) {
-                        Text("Admin")
+                        Text(stringResource(R.string.blocked_admin))
                     }
                 }
             }
         }
+    }
+}
+
+// ============================================
+// Preview Functions
+// ============================================
+
+@Preview(showBackground = true, name = "Blocked App Overlay")
+@Composable
+private fun BlockedAppOverlayPreview() {
+    OpenMDMAgentTheme {
+        BlockedAppOverlay(
+            packageName = "com.example.blocked.app",
+            onDismiss = {},
+            onAdminClick = {}
+        )
     }
 }

@@ -10,8 +10,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.openmdm.agent.ui.launcher.model.LauncherAppInfo
+import com.openmdm.agent.ui.theme.OpenMDMAgentTheme
 
 /**
  * Bottom bar with pinned apps.
@@ -43,5 +45,26 @@ fun BottomBar(
                 )
             }
         }
+    }
+}
+
+// ============================================
+// Preview Functions
+// ============================================
+
+@Preview(showBackground = true, name = "Bottom Bar - With Apps")
+@Composable
+private fun BottomBarPreview() {
+    val sampleApps = listOf(
+        LauncherAppInfo(packageName = "com.phone", label = "Phone", isBottomBar = true),
+        LauncherAppInfo(packageName = "com.messages", label = "Messages", isBottomBar = true),
+        LauncherAppInfo(packageName = "com.browser", label = "Browser", isBottomBar = true),
+        LauncherAppInfo(packageName = "com.camera", label = "Camera", isBottomBar = true)
+    )
+    OpenMDMAgentTheme {
+        BottomBar(
+            apps = sampleApps,
+            onAppClick = {}
+        )
     }
 }

@@ -24,9 +24,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.openmdm.agent.ui.launcher.model.AppType
 import com.openmdm.agent.ui.launcher.model.LauncherAppInfo
+import com.openmdm.agent.ui.theme.OpenMDMAgentTheme
 
 /**
  * Individual app icon in the launcher grid.
@@ -114,4 +116,70 @@ fun BottomBarAppIcon(
         modifier = modifier,
         iconSize = 40
     )
+}
+
+// ============================================
+// Preview Functions
+// ============================================
+
+@Preview(showBackground = true, name = "App Icon - Installed App")
+@Composable
+private fun AppIconInstalledPreview() {
+    OpenMDMAgentTheme {
+        AppIcon(
+            app = LauncherAppInfo(
+                packageName = "com.example.app",
+                label = "Calculator",
+                type = AppType.INSTALLED
+            ),
+            onClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "App Icon - Web App")
+@Composable
+private fun AppIconWebPreview() {
+    OpenMDMAgentTheme {
+        AppIcon(
+            app = LauncherAppInfo(
+                packageName = "web-google",
+                label = "Google",
+                type = AppType.WEB,
+                url = "https://google.com"
+            ),
+            onClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "App Icon - Intent")
+@Composable
+private fun AppIconIntentPreview() {
+    OpenMDMAgentTheme {
+        AppIcon(
+            app = LauncherAppInfo(
+                packageName = "intent-settings",
+                label = "Settings",
+                type = AppType.INTENT,
+                intentAction = "android.settings.SETTINGS"
+            ),
+            onClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Bottom Bar App Icon")
+@Composable
+private fun BottomBarAppIconPreview() {
+    OpenMDMAgentTheme {
+        BottomBarAppIcon(
+            app = LauncherAppInfo(
+                packageName = "com.example.app",
+                label = "Phone",
+                type = AppType.INSTALLED
+            ),
+            onClick = {}
+        )
+    }
 }

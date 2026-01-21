@@ -20,18 +20,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.openmdm.agent.ui.launcher.components.AppGrid
 import com.openmdm.agent.ui.launcher.components.BlockedAppOverlay
 import com.openmdm.agent.ui.launcher.components.BottomBar
+import com.openmdm.agent.ui.launcher.components.EnrollmentScreen
+import com.openmdm.agent.ui.launcher.components.LoadingScreen
 import com.openmdm.agent.ui.launcher.model.LauncherEvent
+import com.openmdm.agent.ui.launcher.model.LauncherScreenState
+import com.openmdm.agent.ui.launcher.model.LauncherUiState
 
 /**
  * Main launcher screen composable.
+ * Implements enrollment-first flow: shows enrollment screen until device is enrolled.
  */
 @Composable
 fun LauncherScreen(
     viewModel: LauncherViewModel = hiltViewModel(),
-    onAdminPanelRequested: () -> Unit = {}
+    onAdminPanelRequested: () -> Unit = {},
+    onScanQrCode: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
+    val screenState by viewModel.screenState.collectAsStateWithLifecycle()
 
     // Handle events
     LaunchedEffect(Unit) {
@@ -44,6 +49,42 @@ fun LauncherScreen(
             }
         }
     }
+
+    when (val state = screenState) {
+        is LauncherScreenState.Loading -> {
+            LoadingScreen(message = "Loading...")
+        }
+        is LauncherScreenState.Enrollment -> {
+            EnrollmentScreen(
+                serverUrl = state.serverUrl,
+                errorMessage = state.errorMessage,
+                isEnrolling = state.isEnrolling,
+                onEnroll = viewModel::enroll,
+                onScanQrCode = onScanQrCode
+            )
+        }
+        is LauncherScreenState.Launcher -> {
+            LauncherContent(
+                uiState = state.uiState,
+                onAppClick = viewModel::onAppClick,
+                onDismissBlocked = viewModel::dismissBlockedOverlay,
+                onAdminClick = viewModel::openAdminPanel
+            )
+        }
+    }
+}
+
+/**
+ * Main launcher content showing app grid and bottom bar.
+ */
+@Composable
+private fun LauncherContent(
+    uiState: LauncherUiState,
+    onAppClick: (com.openmdm.agent.ui.launcher.model.LauncherAppInfo) -> Unit,
+    onDismissBlocked: () -> Unit,
+    onAdminClick: () -> Unit
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // Show error messages
     LaunchedEffect(uiState.errorMessage) {
@@ -69,7 +110,7 @@ fun LauncherScreen(
                 // Main app grid
                 AppGrid(
                     apps = uiState.apps,
-                    onAppClick = viewModel::onAppClick,
+                    onAppClick = onAppClick,
                     columns = uiState.columns,
                     isLoading = uiState.isLoading,
                     modifier = Modifier.weight(1f)
@@ -79,7 +120,7 @@ fun LauncherScreen(
                 if (uiState.showBottomBar && uiState.bottomBarApps.isNotEmpty()) {
                     BottomBar(
                         apps = uiState.bottomBarApps,
-                        onAppClick = viewModel::onAppClick
+                        onAppClick = onAppClick
                     )
                 }
             }
@@ -88,8 +129,8 @@ fun LauncherScreen(
             uiState.blockedAppPackage?.let { packageName ->
                 BlockedAppOverlay(
                     packageName = packageName,
-                    onDismiss = viewModel::dismissBlockedOverlay,
-                    onAdminClick = viewModel::openAdminPanel
+                    onDismiss = onDismissBlocked,
+                    onAdminClick = onAdminClick
                 )
             }
         }

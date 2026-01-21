@@ -14,8 +14,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.openmdm.agent.R
 import com.openmdm.agent.ui.launcher.model.LauncherAppInfo
+import com.openmdm.agent.ui.theme.OpenMDMAgentTheme
 
 /**
  * Grid of app icons for the launcher.
@@ -38,7 +42,7 @@ fun AppGrid(
             }
             apps.isEmpty() -> {
                 Text(
-                    text = "No apps available",
+                    text = stringResource(R.string.launcher_no_apps),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -70,5 +74,54 @@ fun AppGrid(
                 }
             }
         }
+    }
+}
+
+// ============================================
+// Preview Functions
+// ============================================
+
+@Preview(showBackground = true, name = "App Grid - With Apps")
+@Composable
+private fun AppGridWithAppsPreview() {
+    val sampleApps = listOf(
+        LauncherAppInfo(packageName = "com.example.app1", label = "Calculator"),
+        LauncherAppInfo(packageName = "com.example.app2", label = "Calendar"),
+        LauncherAppInfo(packageName = "com.example.app3", label = "Camera"),
+        LauncherAppInfo(packageName = "com.example.app4", label = "Clock"),
+        LauncherAppInfo(packageName = "com.example.app5", label = "Contacts"),
+        LauncherAppInfo(packageName = "com.example.app6", label = "Files")
+    )
+    OpenMDMAgentTheme {
+        AppGrid(
+            apps = sampleApps,
+            onAppClick = {},
+            columns = 4
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "App Grid - Empty")
+@Composable
+private fun AppGridEmptyPreview() {
+    OpenMDMAgentTheme {
+        AppGrid(
+            apps = emptyList(),
+            onAppClick = {},
+            columns = 4
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "App Grid - Loading")
+@Composable
+private fun AppGridLoadingPreview() {
+    OpenMDMAgentTheme {
+        AppGrid(
+            apps = emptyList(),
+            onAppClick = {},
+            columns = 4,
+            isLoading = true
+        )
     }
 }

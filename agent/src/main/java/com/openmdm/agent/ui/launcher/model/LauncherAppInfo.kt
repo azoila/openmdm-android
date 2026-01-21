@@ -100,3 +100,22 @@ sealed class LauncherEvent {
     /** Refresh apps requested */
     data object RefreshRequested : LauncherEvent()
 }
+
+/**
+ * Top-level screen state for the launcher.
+ * Determines which screen to show: Loading, Enrollment, or Launcher.
+ */
+sealed class LauncherScreenState {
+    /** Initial loading state while checking enrollment status */
+    data object Loading : LauncherScreenState()
+
+    /** Enrollment screen - device needs to be enrolled before showing launcher */
+    data class Enrollment(
+        val serverUrl: String = "",
+        val errorMessage: String? = null,
+        val isEnrolling: Boolean = false
+    ) : LauncherScreenState()
+
+    /** Main launcher screen - device is enrolled and ready */
+    data class Launcher(val uiState: LauncherUiState) : LauncherScreenState()
+}

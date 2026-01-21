@@ -45,19 +45,16 @@
         android:theme="@style/Theme.OpenMDMAgent"
         tools:targetApi="34">
 
-        <!-- Main Activity -->
+        <!-- Main Activity (Admin Panel) -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@style/Theme.OpenMDMAgent">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
+            <!-- No LAUNCHER category - accessed via admin panel from launcher -->
         </activity>
 
-        <!-- MDM Launcher Activity (Home Screen) -->
+        <!-- MDM Launcher Activity (Home Screen & App Entry Point) -->
         <activity
             android:name=".ui.launcher.LauncherActivity"
             android:exported="true"
@@ -70,6 +67,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 

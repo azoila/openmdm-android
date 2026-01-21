@@ -6,10 +6,16 @@
     <string name="enrollment_title">Device Enrollment</string>
     <string name="enrollment_description">This device needs to be enrolled with your organization\'s MDM server.</string>
     <string name="enrollment_server_url">Server URL</string>
+    <string name="enrollment_server_url_placeholder">https://mdm.example.com</string>
+    <string name="enrollment_device_code">Device Code</string>
+    <string name="enrollment_device_code_placeholder">e.g., ABC123</string>
     <string name="enrollment_button">Enroll Device</string>
+    <string name="enrollment_button_enrolling">Enrolling…</string>
     <string name="enrollment_in_progress">Enrolling…</string>
     <string name="enrollment_success">Device enrolled successfully</string>
     <string name="enrollment_failed">Enrollment failed: %1$s</string>
+    <string name="enrollment_scan_qr">Scan QR Code</string>
+    <string name="enrollment_enter_code_description">Enter the device code provided by your administrator to enroll this device.</string>
 
     <!-- Status -->
     <string name="status_enrolled">Enrolled</string>
@@ -42,4 +48,14 @@
     <string name="action_sync">Sync Now</string>
     <string name="action_unenroll">Unenroll Device</string>
     <string name="action_settings">Settings</string>
+
+    <!-- Launcher -->
+    <string name="launcher_loading">Loading…</string>
+    <string name="launcher_no_apps">No apps available</string>
+
+    <!-- Blocked App Overlay -->
+    <string name="blocked_title">Access Denied</string>
+    <string name="blocked_description">This application is not allowed by your organization\'s policy.</string>
+    <string name="blocked_continue">Continue</string>
+    <string name="blocked_admin">Admin</string>
 </resources>

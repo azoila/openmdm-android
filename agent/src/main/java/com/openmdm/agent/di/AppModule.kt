@@ -4,6 +4,10 @@ import android.content.Context
 import com.openmdm.agent.BuildConfig
 import com.openmdm.agent.data.MDMApi
 import com.openmdm.agent.data.MDMRepository
+import com.openmdm.agent.data.repository.AppRepositoryImpl
+import com.openmdm.agent.domain.repository.IAppRepository
+import com.openmdm.agent.domain.repository.IEnrollmentRepository
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -60,4 +64,22 @@ object AppModule {
     fun provideMDMRepository(@ApplicationContext context: Context): MDMRepository {
         return MDMRepository(context)
     }
+}
+
+/**
+ * Module for binding interfaces to implementations.
+ *
+ * Uses @Binds for efficient interface-to-implementation binding.
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class RepositoryModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindEnrollmentRepository(impl: MDMRepository): IEnrollmentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAppRepository(impl: AppRepositoryImpl): IAppRepository
 }
