@@ -75,6 +75,18 @@ class MDMService : LifecycleService() {
                 val commandJson = intent.getStringExtra(EXTRA_COMMAND)
                 commandJson?.let { processIncomingCommand(it) }
             }
+            ACTION_INSTALL_COMPLETE -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
+                val success = intent.getBooleanExtra(EXTRA_SUCCESS, false)
+                val message = intent.getStringExtra(EXTRA_MESSAGE)
+                handleInstallComplete(packageName, success, message)
+            }
+            ACTION_UNINSTALL_COMPLETE -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
+                val success = intent.getBooleanExtra(EXTRA_SUCCESS, false)
+                val message = intent.getStringExtra(EXTRA_MESSAGE)
+                handleUninstallComplete(packageName, success, message)
+            }
         }
 
         return START_STICKY
@@ -771,6 +783,85 @@ class MDMService : LifecycleService() {
         }
     }
 
+    /**
+     * Handle installation complete callback from InstallResultReceiver.
+     * Reports result to server and applies post-install setup on success.
+     */
+    private fun handleInstallComplete(packageName: String?, success: Boolean, message: String?) {
+        if (packageName == null) return
+
+        lifecycleScope.launch {
+            try {
+                val state = mdmRepository.getEnrollmentState()
+                if (!state.isEnrolled || state.token == null) return@launch
+
+                // Report install result to server as an event
+                mdmApi.reportEvent(
+                    "Bearer ${state.token}",
+                    EventRequest(
+                        type = "app_install",
+                        payload = mapOf(
+                            "packageName" to packageName,
+                            "success" to success,
+                            "message" to (message ?: ""),
+                            "timestamp" to System.currentTimeMillis()
+                        ),
+                        timestamp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+                            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                            .format(java.util.Date())
+                    )
+                )
+
+                // On success, apply post-install setup
+                if (success && deviceOwnerManager.isDeviceOwner()) {
+                    // Grant common permissions
+                    deviceOwnerManager.grantCommonPermissions(packageName)
+                    // Add to battery optimization whitelist
+                    deviceOwnerManager.whitelistFromBatteryOptimization(packageName)
+
+                    android.util.Log.i("OpenMDM.MDMService",
+                        "Post-install setup completed for $packageName: permissions granted, battery whitelisted")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("OpenMDM.MDMService", "Failed to handle install complete: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Handle uninstallation complete callback from InstallResultReceiver.
+     * Reports result to server.
+     */
+    private fun handleUninstallComplete(packageName: String?, success: Boolean, message: String?) {
+        if (packageName == null) return
+
+        lifecycleScope.launch {
+            try {
+                val state = mdmRepository.getEnrollmentState()
+                if (!state.isEnrolled || state.token == null) return@launch
+
+                // Report uninstall result to server as an event
+                mdmApi.reportEvent(
+                    "Bearer ${state.token}",
+                    EventRequest(
+                        type = "app_uninstall",
+                        payload = mapOf(
+                            "packageName" to packageName,
+                            "success" to success,
+                            "message" to (message ?: ""),
+                            "timestamp" to System.currentTimeMillis()
+                        ),
+                        timestamp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+                            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                            .format(java.util.Date())
+                    )
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("OpenMDM.MDMService", "Failed to handle uninstall complete: ${e.message}")
+            }
+        }
+    }
+
     private fun processIncomingCommand(commandJson: String) {
         lifecycleScope.launch {
             // Parse and process push command
@@ -924,7 +1015,12 @@ class MDMService : LifecycleService() {
         const val ACTION_STOP = "com.openmdm.agent.STOP"
         const val ACTION_SYNC_NOW = "com.openmdm.agent.SYNC_NOW"
         const val ACTION_PROCESS_COMMAND = "com.openmdm.agent.PROCESS_COMMAND"
+        const val ACTION_INSTALL_COMPLETE = "com.openmdm.agent.INSTALL_COMPLETE"
+        const val ACTION_UNINSTALL_COMPLETE = "com.openmdm.agent.UNINSTALL_COMPLETE"
         const val EXTRA_COMMAND = "command"
+        const val EXTRA_PACKAGE_NAME = "packageName"
+        const val EXTRA_SUCCESS = "success"
+        const val EXTRA_MESSAGE = "message"
 
         private const val NOTIFICATION_ID = 1001
         private const val DEFAULT_HEARTBEAT_INTERVAL = 60_000L // 1 minute

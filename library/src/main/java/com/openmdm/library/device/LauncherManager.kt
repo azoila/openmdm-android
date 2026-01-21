@@ -221,21 +221,36 @@ class LauncherManager private constructor(
 
             VisibilityMode.ALLOWLIST -> {
                 // Hide all apps except those in allowedApps
-                val systemPackages = getSystemPackages()
+                // NOTE: Do NOT exempt all system packages - only critical system UI
+                // This is a kiosk mode, so we want strict control over visible apps
                 val alwaysAllowed = setOf(
-                    context.packageName,  // MDM app
-                    "com.android.settings",
-                    "com.android.systemui"
+                    context.packageName,  // MDM app must always be visible
+                    "com.android.systemui"  // Required for system UI
                 )
 
+                // First, unhide any allowed apps that are currently hidden
+                // This is important because hidden apps don't show up in getAllLaunchablePackages()
+                getHiddenApps().forEach { packageName ->
+                    if (packageName in allowedApps || packageName in alwaysAllowed) {
+                        showApp(packageName)
+                    }
+                }
+
+                // Also explicitly try to show all allowed apps (in case they were hidden)
+                allowedApps.forEach { packageName ->
+                    try {
+                        showApp(packageName)
+                    } catch (e: Exception) {
+                        // App might not be installed, ignore
+                    }
+                }
+
+                // Now hide all non-allowed launchable apps
                 getAllLaunchablePackages().forEach { packageName ->
                     val shouldBeVisible = packageName in allowedApps ||
-                            packageName in alwaysAllowed ||
-                            packageName in systemPackages
+                            packageName in alwaysAllowed
 
-                    if (shouldBeVisible) {
-                        showApp(packageName)
-                    } else {
+                    if (!shouldBeVisible) {
                         hideApp(packageName)
                     }
                 }

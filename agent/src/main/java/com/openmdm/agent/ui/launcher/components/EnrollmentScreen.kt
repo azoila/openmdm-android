@@ -48,15 +48,13 @@ import com.openmdm.agent.ui.theme.OpenMDMAgentTheme
  */
 @Composable
 fun EnrollmentScreen(
-    serverUrl: String,
     errorMessage: String?,
     isEnrolling: Boolean,
-    onEnroll: (deviceCode: String, serverUrl: String) -> Unit,
+    onEnroll: (deviceCode: String) -> Unit,
     onScanQrCode: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var deviceCode by remember { mutableStateOf("") }
-    var editableServerUrl by remember(serverUrl) { mutableStateOf(serverUrl) }
 
     Box(
         modifier = modifier
@@ -97,20 +95,6 @@ fun EnrollmentScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Server URL field
-                OutlinedTextField(
-                    value = editableServerUrl,
-                    onValueChange = { editableServerUrl = it },
-                    label = { Text(stringResource(R.string.enrollment_server_url)) },
-                    placeholder = { Text(stringResource(R.string.enrollment_server_url_placeholder)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isEnrolling,
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Next
-                    )
-                )
-
                 // Device Code field
                 OutlinedTextField(
                     value = deviceCode,
@@ -126,8 +110,8 @@ fun EnrollmentScreen(
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            if (deviceCode.isNotBlank() && editableServerUrl.isNotBlank() && !isEnrolling) {
-                                onEnroll(deviceCode, editableServerUrl)
+                            if (deviceCode.isNotBlank() && !isEnrolling) {
+                                onEnroll(deviceCode)
                             }
                         }
                     )
@@ -147,9 +131,9 @@ fun EnrollmentScreen(
 
                 // Enroll button
                 Button(
-                    onClick = { onEnroll(deviceCode, editableServerUrl) },
+                    onClick = { onEnroll(deviceCode) },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = deviceCode.isNotBlank() && editableServerUrl.isNotBlank() && !isEnrolling
+                    enabled = deviceCode.isNotBlank() && !isEnrolling
                 ) {
                     if (isEnrolling) {
                         CircularProgressIndicator(
@@ -224,10 +208,9 @@ fun LoadingScreen(
 private fun EnrollmentScreenPreview() {
     OpenMDMAgentTheme {
         EnrollmentScreen(
-            serverUrl = "https://mdm.example.com",
             errorMessage = null,
             isEnrolling = false,
-            onEnroll = { _, _ -> },
+            onEnroll = { _ -> },
             onScanQrCode = {}
         )
     }
@@ -238,10 +221,9 @@ private fun EnrollmentScreenPreview() {
 private fun EnrollmentScreenErrorPreview() {
     OpenMDMAgentTheme {
         EnrollmentScreen(
-            serverUrl = "https://mdm.example.com",
             errorMessage = "Invalid device code. Please try again.",
             isEnrolling = false,
-            onEnroll = { _, _ -> },
+            onEnroll = { _ -> },
             onScanQrCode = {}
         )
     }
@@ -252,10 +234,9 @@ private fun EnrollmentScreenErrorPreview() {
 private fun EnrollmentScreenLoadingPreview() {
     OpenMDMAgentTheme {
         EnrollmentScreen(
-            serverUrl = "https://mdm.example.com",
             errorMessage = null,
             isEnrolling = true,
-            onEnroll = { _, _ -> },
+            onEnroll = { _ -> },
             onScanQrCode = {}
         )
     }

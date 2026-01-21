@@ -111,7 +111,6 @@ sealed class LauncherScreenState {
 
     /** Enrollment screen - device needs to be enrolled before showing launcher */
     data class Enrollment(
-        val serverUrl: String = "",
         val errorMessage: String? = null,
         val isEnrolling: Boolean = false
     ) : LauncherScreenState()

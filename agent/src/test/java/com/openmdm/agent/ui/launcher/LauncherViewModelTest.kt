@@ -423,8 +423,7 @@ class LauncherViewModelTest {
     fun `screen state shows enrollment when not enrolled`() = runTest {
         // Update enrollment state to not enrolled
         enrollmentStateFlow.value = EnrollmentState(
-            isEnrolled = false,
-            serverUrl = "https://mdm.example.com"
+            isEnrolled = false
         )
 
         viewModel = createViewModel()
@@ -432,7 +431,6 @@ class LauncherViewModelTest {
 
         val screenState = viewModel.screenState.value
         assertThat(screenState).isInstanceOf(LauncherScreenState.Enrollment::class.java)
-        assertThat((screenState as LauncherScreenState.Enrollment).serverUrl).isEqualTo("https://mdm.example.com")
     }
 
     @Test
@@ -451,7 +449,7 @@ class LauncherViewModelTest {
     @Test
     fun `LauncherScreenState types are distinguishable`() {
         val loading = LauncherScreenState.Loading
-        val enrollment = LauncherScreenState.Enrollment(serverUrl = "https://test.com")
+        val enrollment = LauncherScreenState.Enrollment()
         val launcher = LauncherScreenState.Launcher(LauncherUiState())
 
         assertThat(loading).isNotEqualTo(enrollment)

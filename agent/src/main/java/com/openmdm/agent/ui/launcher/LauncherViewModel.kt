@@ -86,9 +86,7 @@ class LauncherViewModel @Inject constructor(
                 when {
                     !state.isEnrolled -> {
                         // Not enrolled - show enrollment screen
-                        _screenState.value = LauncherScreenState.Enrollment(
-                            serverUrl = state.serverUrl
-                        )
+                        _screenState.value = LauncherScreenState.Enrollment()
                     }
                     state.policyVersion == null -> {
                         // Enrolled but no policy yet - fetch it
@@ -105,9 +103,9 @@ class LauncherViewModel @Inject constructor(
     }
 
     /**
-     * Enroll the device with the given device code and server URL.
+     * Enroll the device with the given device code.
      */
-    fun enroll(deviceCode: String, serverUrl: String) {
+    fun enroll(deviceCode: String) {
         viewModelScope.launch {
             // Update state to show enrolling
             _screenState.update {
@@ -119,7 +117,7 @@ class LauncherViewModel @Inject constructor(
 
             try {
                 val result = withContext(Dispatchers.IO) {
-                    enrollDeviceUseCase(deviceCode, serverUrl)
+                    enrollDeviceUseCase(deviceCode)
                 }
 
                 result.fold(

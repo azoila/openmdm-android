@@ -20,7 +20,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "MDM_SERVER_URL", "\"${findProperty("mdmServerUrl") ?: "https://mdm.example.com"}\"")
+        // Default to emulator localhost - override via gradle property: -PmdmServerUrl=https://your-server.com/mdm
+        buildConfigField("String", "MDM_SERVER_URL", "\"${findProperty("mdmServerUrl") ?: "http://10.0.2.2:3000/mdm"}\"")
         buildConfigField("String", "DEVICE_SECRET", "\"${findProperty("deviceSecret") ?: "change-me-in-production"}\"")
     }
 

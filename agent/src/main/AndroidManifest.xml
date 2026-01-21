@@ -141,6 +141,28 @@
                 tools:node="remove" />
         </provider>
 
+        <!-- MDM Content Provider for other apps to query enrollment info -->
+        <!-- No permission required - managed apps need to query this freely -->
+        <provider
+            android:name=".provider.MDMContentProvider"
+            android:authorities="com.openmdm.agent.provider"
+            android:exported="true"
+            android:grantUriPermissions="false">
+        </provider>
+
+        <!-- MDM Integration Service for app binding (HeadwindMDM-compatible) -->
+        <service
+            android:name=".service.MDMIntegrationService"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <!-- OpenMDM connect action -->
+                <action android:name="com.openmdm.action.Connect" />
+                <!-- HeadwindMDM-compatible connect action for broader compatibility -->
+                <action android:name="com.hmdm.action.Connect" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

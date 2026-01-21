@@ -32,13 +32,13 @@ class EnrollDeviceUseCase @Inject constructor(
 ) {
 
     /**
-     * Enroll the device with the given device code and server URL.
+     * Enroll the device with the given device code.
+     * Server URL is taken from BuildConfig.MDM_SERVER_URL.
      *
      * @param deviceCode The enrollment code provided by the administrator
-     * @param serverUrl The MDM server URL
      * @return Result indicating success or failure with error message
      */
-    suspend operator fun invoke(deviceCode: String, serverUrl: String): Result<Unit> {
+    suspend operator fun invoke(deviceCode: String): Result<Unit> {
         return try {
             val deviceInfo = deviceInfoCollector.collectDeviceInfo()
             val timestamp = generateTimestamp()
@@ -76,10 +76,12 @@ class EnrollDeviceUseCase @Inject constructor(
                 response.body()?.let { body ->
                     enrollmentRepository.saveEnrollment(
                         deviceId = body.deviceId,
-                        enrollmentId = body.enrollmentId,
+                        // Use the device code entered by user (pairing code) as enrollment ID
+                        // This is what MidiaMob Player needs for activation
+                        enrollmentId = deviceCode,
                         token = body.token,
                         refreshToken = body.refreshToken,
-                        serverUrl = serverUrl,
+                        serverUrl = BuildConfig.MDM_SERVER_URL,
                         policyVersion = body.policy?.version
                     )
                     Result.success(Unit)

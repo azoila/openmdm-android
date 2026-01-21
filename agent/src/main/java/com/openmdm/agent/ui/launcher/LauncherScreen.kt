@@ -56,7 +56,6 @@ fun LauncherScreen(
         }
         is LauncherScreenState.Enrollment -> {
             EnrollmentScreen(
-                serverUrl = state.serverUrl,
                 errorMessage = state.errorMessage,
                 isEnrolling = state.isEnrolling,
                 onEnroll = viewModel::enroll,
