@@ -1,9 +1,11 @@
 package com.openmdm.agent.domain.usecase
 
 import android.content.Context
+import com.google.gson.Gson
 import com.openmdm.agent.BuildConfig
 import com.openmdm.agent.data.EnrollmentRequest
 import com.openmdm.agent.data.MDMApi
+import com.openmdm.agent.data.MDMRepository
 import com.openmdm.agent.domain.repository.IEnrollmentRepository
 import com.openmdm.agent.util.DeviceInfoCollector
 import com.openmdm.agent.util.SignatureGenerator
@@ -27,9 +29,11 @@ class EnrollDeviceUseCase @Inject constructor(
     @ApplicationContext private val context: Context,
     private val mdmApi: MDMApi,
     private val enrollmentRepository: IEnrollmentRepository,
+    private val mdmRepository: MDMRepository,
     private val deviceInfoCollector: DeviceInfoCollector,
     private val signatureGenerator: SignatureGenerator
 ) {
+    private val gson = Gson()
 
     /**
      * Enroll the device with the given device code.
@@ -84,6 +88,13 @@ class EnrollDeviceUseCase @Inject constructor(
                         serverUrl = BuildConfig.MDM_SERVER_URL,
                         policyVersion = body.policy?.version
                     )
+
+                    // Save policy settings for launcher filtering
+                    body.policy?.settings?.let { settings ->
+                        val settingsJson = gson.toJson(settings)
+                        mdmRepository.savePolicySettings(settingsJson)
+                    }
+
                     Result.success(Unit)
                 } ?: Result.failure(EnrollmentException("Empty response from server"))
             } else {

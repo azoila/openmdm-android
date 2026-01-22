@@ -1,8 +1,11 @@
 package com.openmdm.agent.ui.launcher
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.openmdm.agent.data.EnrollmentState
 import com.openmdm.agent.data.HeartbeatRequest
 import com.openmdm.agent.data.InstalledAppData
@@ -72,9 +75,52 @@ class LauncherViewModel @Inject constructor(
     val events = _events.asSharedFlow()
 
     private var launcherConfig: LauncherConfig? = null
+    private val gson = Gson()
+
+    companion object {
+        private const val TAG = "LauncherViewModel"
+    }
 
     init {
         observeEnrollmentState()
+    }
+
+    /**
+     * Load policy settings from storage and convert to LauncherConfig.
+     */
+    private suspend fun loadPolicySettings(): LauncherConfig? {
+        return try {
+            val settingsJson = mdmRepository.getPolicySettingsJson() ?: return null
+
+            // Parse JSON to Map
+            val type = object : TypeToken<Map<String, Any?>>() {}.type
+            val settings: Map<String, Any?> = gson.fromJson(settingsJson, type)
+
+            // Extract launcher-relevant settings
+            val allowedApps = (settings["allowedApps"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+            val blockedApps = (settings["blockedApps"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+            val launcherMode = settings["launcherMode"] as? String ?: "default"
+            val launcherEnabled = settings["launcherEnabled"] as? Boolean ?: true
+            val launcherColumns = (settings["launcherColumns"] as? Number)?.toInt() ?: 4
+            val showBottomBar = settings["launcherShowBottomBar"] as? Boolean ?: true
+
+            Log.d(TAG, "Loaded policy settings: mode=$launcherMode, allowedApps=$allowedApps")
+
+            LauncherConfig(
+                enabled = launcherEnabled,
+                mode = launcherMode,
+                apps = emptyList(),
+                setAsDefault = false,
+                showBlockedOverlay = true,
+                columns = launcherColumns,
+                showBottomBar = showBottomBar,
+                allowedApps = allowedApps,
+                blockedApps = blockedApps
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load policy settings", e)
+            null
+        }
     }
 
     /**
@@ -175,6 +221,10 @@ class LauncherViewModel @Inject constructor(
             if (response.isSuccessful) {
                 response.body()?.policyUpdate?.let { policy ->
                     enrollmentRepository.updatePolicyVersion(policy.version ?: "1")
+                    // Also save policy settings for launcher filtering
+                    val settingsJson = gson.toJson(policy.settings)
+                    mdmRepository.savePolicySettings(settingsJson)
+                    Log.d(TAG, "Saved policy settings from heartbeat: ${policy.settings}")
                 }
                 // If no policy update but successful, still allow launcher
                 if (response.body()?.policyUpdate == null) {
@@ -204,6 +254,30 @@ class LauncherViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
             try {
+                // Load policy settings if not already loaded
+                if (launcherConfig == null) {
+                    launcherConfig = withContext(Dispatchers.IO) {
+                        loadPolicySettings()
+                    }
+                    Log.d(TAG, "Loaded launcher config from storage: $launcherConfig")
+
+                    // If still null, trigger heartbeat to fetch fresh policy
+                    if (launcherConfig == null) {
+                        Log.d(TAG, "No saved policy settings, fetching from server...")
+                        val state = mdmRepository.getEnrollmentState()
+                        if (state.isEnrolled) {
+                            withContext(Dispatchers.IO) {
+                                fetchInitialPolicy(state)
+                            }
+                            // Try loading again after heartbeat
+                            launcherConfig = withContext(Dispatchers.IO) {
+                                loadPolicySettings()
+                            }
+                            Log.d(TAG, "Loaded launcher config after heartbeat: $launcherConfig")
+                        }
+                    }
+                }
+
                 val result = withContext(Dispatchers.IO) {
                     loadLauncherAppsUseCase(launcherConfig)
                 }

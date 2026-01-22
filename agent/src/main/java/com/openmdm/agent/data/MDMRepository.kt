@@ -47,6 +47,7 @@ class MDMRepository @Inject constructor(
         val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
         val SERVER_URL = stringPreferencesKey("server_url")
         val POLICY_VERSION = stringPreferencesKey("policy_version")
+        val POLICY_SETTINGS = stringPreferencesKey("policy_settings")
         val LAST_SYNC = stringPreferencesKey("last_sync")
     }
 
@@ -110,7 +111,24 @@ class MDMRepository @Inject constructor(
             preferences.remove(Keys.TOKEN)
             preferences.remove(Keys.REFRESH_TOKEN)
             preferences.remove(Keys.POLICY_VERSION)
+            preferences.remove(Keys.POLICY_SETTINGS)
             preferences.remove(Keys.LAST_SYNC)
         }
+    }
+
+    /**
+     * Save policy settings as JSON string.
+     */
+    suspend fun savePolicySettings(settingsJson: String) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.POLICY_SETTINGS] = settingsJson
+        }
+    }
+
+    /**
+     * Get saved policy settings JSON.
+     */
+    suspend fun getPolicySettingsJson(): String? {
+        return context.dataStore.data.first()[Keys.POLICY_SETTINGS]
     }
 }

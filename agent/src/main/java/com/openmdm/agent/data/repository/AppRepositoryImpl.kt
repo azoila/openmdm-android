@@ -50,14 +50,14 @@ class AppRepositoryImpl @Inject constructor(
             val packageName = resolveInfo.activityInfo.packageName
 
             // Apply visibility filtering based on mode
+            // Note: Don't include the MDM agent itself in the launcher grid
             val shouldInclude = when (mode) {
                 "allowlist" -> {
                     packageName in allowedApps ||
-                    packageName == context.packageName ||
                     configuredAppsMap.containsKey(packageName)
                 }
-                "blocklist" -> packageName !in blockedApps
-                else -> true
+                "blocklist" -> packageName !in blockedApps && packageName != context.packageName
+                else -> packageName != context.packageName // Exclude agent from default mode too
             }
 
             if (!shouldInclude) return@mapNotNull null
