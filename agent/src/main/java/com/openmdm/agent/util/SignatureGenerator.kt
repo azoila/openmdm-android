@@ -17,8 +17,10 @@ class SignatureGenerator @Inject constructor() {
     /**
      * Generate enrollment signature
      *
-     * The signature is an HMAC-SHA256 of the concatenated device identifiers:
-     * model|manufacturer|osVersion|serialNumber|imei|macAddress|androidId|method|timestamp
+     * The signature is an HMAC-SHA256 of: "{identifier}:{timestamp}"
+     * where identifier is the first available of: macAddress, serialNumber, imei, or androidId
+     *
+     * This matches the OpenMDM server's verifyEnrollmentSignature function.
      */
     fun generateEnrollmentSignature(
         model: String,
@@ -31,18 +33,15 @@ class SignatureGenerator @Inject constructor() {
         method: String,
         timestamp: String
     ): String {
-        val message = listOf(
-            model,
-            manufacturer,
-            osVersion,
-            serialNumber ?: "",
-            imei ?: "",
-            macAddress ?: "",
-            androidId ?: "",
-            method,
-            timestamp
-        ).joinToString("|")
+        // Use the same identifier priority as the server:
+        // macAddress || serialNumber || imei || androidId
+        val identifier = macAddress?.takeIf { it.isNotEmpty() }
+            ?: serialNumber?.takeIf { it.isNotEmpty() }
+            ?: imei?.takeIf { it.isNotEmpty() }
+            ?: androidId?.takeIf { it.isNotEmpty() }
+            ?: ""
 
+        val message = "$identifier:$timestamp"
         return hmacSha256(message, secret)
     }
 

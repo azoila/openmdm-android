@@ -48,6 +48,17 @@ android {
         jvmTarget = "17"
     }
 
+    packaging {
+        resources {
+            excludes += listOf(
+                "META-INF/LICENSE.md",
+                "META-INF/LICENSE-notice.md",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1"
+            )
+        }
+    }
+
     publishing {
         singleVariant("release") {
             withSourcesJar()

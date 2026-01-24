@@ -1,5 +1,8 @@
 package com.openmdm.library.policy
 
+import org.json.JSONArray
+import org.json.JSONObject
+
 /**
  * Maps raw policy Map<String, Any?> from server to typed PolicySettings.
  *
@@ -7,6 +10,49 @@ package com.openmdm.library.policy
  * with various server formats.
  */
 object PolicyMapper {
+
+    /**
+     * Convert a JSON string to typed PolicySettings
+     */
+    fun fromJson(json: String): PolicySettings {
+        val jsonObject = JSONObject(json)
+        val map = jsonObjectToMap(jsonObject)
+        return fromMap(map)
+    }
+
+    /**
+     * Convert a JSONObject to a Map recursively
+     */
+    private fun jsonObjectToMap(jsonObject: JSONObject): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        jsonObject.keys().forEach { key ->
+            val value = jsonObject.get(key)
+            map[key] = when (value) {
+                JSONObject.NULL -> null
+                is JSONObject -> jsonObjectToMap(value)
+                is JSONArray -> jsonArrayToList(value)
+                else -> value
+            }
+        }
+        return map
+    }
+
+    /**
+     * Convert a JSONArray to a List recursively
+     */
+    private fun jsonArrayToList(jsonArray: JSONArray): List<Any?> {
+        val list = mutableListOf<Any?>()
+        for (i in 0 until jsonArray.length()) {
+            val value = jsonArray.get(i)
+            list.add(when (value) {
+                JSONObject.NULL -> null
+                is JSONObject -> jsonObjectToMap(value)
+                is JSONArray -> jsonArrayToList(value)
+                else -> value
+            })
+        }
+        return list
+    }
 
     /**
      * Convert a raw policy map to typed PolicySettings
@@ -103,6 +149,15 @@ object PolicyMapper {
             defaultBrowserPackage = map.getString("defaultBrowserPackage"),
             defaultDialerPackage = map.getString("defaultDialerPackage"),
             defaultLauncherPackage = map.getString("defaultLauncherPackage"),
+
+            // Launcher Settings
+            launcherEnabled = map.getBoolean("launcherEnabled") ?: false,
+            launcherMode = map.getString("launcherMode") ?: "default",
+            launcherApps = parseLauncherApps(map["launcherApps"]),
+            setAsDefaultLauncher = map.getBoolean("setAsDefaultLauncher") ?: false,
+            showBlockedAppOverlay = map.getBoolean("showBlockedAppOverlay") ?: true,
+            launcherColumns = map.getInt("launcherColumns") ?: 4,
+            launcherShowBottomBar = map.getBoolean("launcherShowBottomBar") ?: true,
 
             // File Deployment
             fileDeployments = parseFileDeployments(map["fileDeployments"] ?: map["files"]),
@@ -206,6 +261,29 @@ object PolicyMapper {
             settings.defaultBrowserPackage?.let { put("defaultBrowserPackage", it) }
             settings.defaultDialerPackage?.let { put("defaultDialerPackage", it) }
             settings.defaultLauncherPackage?.let { put("defaultLauncherPackage", it) }
+
+            // Launcher Settings
+            put("launcherEnabled", settings.launcherEnabled)
+            put("launcherMode", settings.launcherMode)
+            if (settings.launcherApps.isNotEmpty()) {
+                put("launcherApps", settings.launcherApps.map { app ->
+                    buildMap {
+                        put("packageName", app.packageName)
+                        app.label?.let { put("label", it) }
+                        app.iconUrl?.let { put("iconUrl", it) }
+                        app.screenOrder?.let { put("screenOrder", it) }
+                        put("isBottomBar", app.isBottomBar)
+                        put("type", app.type.name)
+                        app.url?.let { put("url", it) }
+                        app.intentAction?.let { put("intentAction", it) }
+                        app.intentUri?.let { put("intentUri", it) }
+                    }
+                })
+            }
+            put("setAsDefaultLauncher", settings.setAsDefaultLauncher)
+            put("showBlockedAppOverlay", settings.showBlockedAppOverlay)
+            put("launcherColumns", settings.launcherColumns)
+            put("launcherShowBottomBar", settings.launcherShowBottomBar)
 
             // Compliance
             put("encryptionRequired", settings.encryptionRequired)
@@ -376,6 +454,33 @@ object PolicyMapper {
                 hash = map["hash"] as? String,
                 overwrite = (map["overwrite"] as? Boolean) ?: true
             )
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseLauncherApps(value: Any?): List<LauncherAppConfig> {
+        val list = value as? List<*> ?: return emptyList()
+        return list.mapNotNull { item ->
+            val map = item as? Map<String, Any?> ?: return@mapNotNull null
+            LauncherAppConfig(
+                packageName = map["packageName"] as? String ?: return@mapNotNull null,
+                label = map["label"] as? String,
+                iconUrl = map["iconUrl"] as? String,
+                screenOrder = (map["screenOrder"] as? Number)?.toInt(),
+                isBottomBar = (map["isBottomBar"] as? Boolean) ?: false,
+                type = parseLauncherAppType(map["type"] as? String),
+                url = map["url"] as? String,
+                intentAction = map["intentAction"] as? String,
+                intentUri = map["intentUri"] as? String
+            )
+        }
+    }
+
+    private fun parseLauncherAppType(value: String?): LauncherAppType {
+        return when (value?.uppercase()) {
+            "WEB" -> LauncherAppType.WEB
+            "INTENT" -> LauncherAppType.INTENT
+            else -> LauncherAppType.APP
         }
     }
 }

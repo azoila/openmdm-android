@@ -1,0 +1,119 @@
+package com.openmdm.agent.domain.usecase
+
+import android.content.Context
+import com.google.gson.Gson
+import com.openmdm.agent.BuildConfig
+import com.openmdm.agent.data.EnrollmentRequest
+import com.openmdm.agent.data.MDMApi
+import com.openmdm.agent.data.MDMRepository
+import com.openmdm.agent.domain.repository.IEnrollmentRepository
+import com.openmdm.agent.util.DeviceInfoCollector
+import com.openmdm.agent.util.SignatureGenerator
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import javax.inject.Inject
+
+/**
+ * Use case for enrolling a device with the MDM server.
+ *
+ * Handles the complete enrollment flow:
+ * 1. Collect device information
+ * 2. Generate enrollment signature
+ * 3. Send enrollment request to server
+ * 4. Save enrollment data on success
+ */
+class EnrollDeviceUseCase @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val mdmApi: MDMApi,
+    private val enrollmentRepository: IEnrollmentRepository,
+    private val mdmRepository: MDMRepository,
+    private val deviceInfoCollector: DeviceInfoCollector,
+    private val signatureGenerator: SignatureGenerator
+) {
+    private val gson = Gson()
+
+    /**
+     * Enroll the device with the given device code.
+     * Server URL is taken from BuildConfig.MDM_SERVER_URL.
+     *
+     * @param deviceCode The enrollment code provided by the administrator
+     * @return Result indicating success or failure with error message
+     */
+    suspend operator fun invoke(deviceCode: String): Result<Unit> {
+        return try {
+            val deviceInfo = deviceInfoCollector.collectDeviceInfo()
+            val timestamp = generateTimestamp()
+
+            val signature = signatureGenerator.generateEnrollmentSignature(
+                model = deviceInfo.model,
+                manufacturer = deviceInfo.manufacturer,
+                osVersion = deviceInfo.osVersion,
+                serialNumber = deviceInfo.serialNumber,
+                imei = deviceInfo.imei,
+                macAddress = deviceInfo.macAddress,
+                androidId = deviceInfo.androidId,
+                method = "device_code:$deviceCode",
+                timestamp = timestamp
+            )
+
+            val request = EnrollmentRequest(
+                model = deviceInfo.model,
+                manufacturer = deviceInfo.manufacturer,
+                osVersion = deviceInfo.osVersion,
+                sdkVersion = deviceInfo.sdkVersion,
+                serialNumber = deviceInfo.serialNumber,
+                imei = deviceInfo.imei,
+                macAddress = deviceInfo.macAddress,
+                androidId = deviceInfo.androidId,
+                agentVersion = BuildConfig.VERSION_NAME,
+                agentPackage = context.packageName,
+                method = "device_code:$deviceCode",
+                timestamp = timestamp,
+                signature = signature
+            )
+
+            val response = mdmApi.enroll(request)
+            if (response.isSuccessful) {
+                response.body()?.let { body ->
+                    enrollmentRepository.saveEnrollment(
+                        deviceId = body.deviceId,
+                        // Use the device code entered by user (pairing code) as enrollment ID
+                        // This is what MidiaMob Player needs for activation
+                        enrollmentId = deviceCode,
+                        token = body.token,
+                        refreshToken = body.refreshToken,
+                        serverUrl = BuildConfig.MDM_SERVER_URL,
+                        policyVersion = body.policy?.version
+                    )
+
+                    // Save policy settings for launcher filtering
+                    body.policy?.settings?.let { settings ->
+                        val settingsJson = gson.toJson(settings)
+                        mdmRepository.savePolicySettings(settingsJson)
+                    }
+
+                    Result.success(Unit)
+                } ?: Result.failure(EnrollmentException("Empty response from server"))
+            } else {
+                val errorBody = response.errorBody()?.string()
+                Result.failure(EnrollmentException("Enrollment failed: ${response.code()} - $errorBody"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun generateTimestamp(): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        sdf.timeZone = TimeZone.getTimeZone("UTC")
+        return sdf.format(Date())
+    }
+}
+
+/**
+ * Exception thrown when enrollment fails.
+ */
+class EnrollmentException(message: String) : Exception(message)

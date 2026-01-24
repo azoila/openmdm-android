@@ -20,10 +20,20 @@ import com.openmdm.agent.util.DeviceInfoCollector
 import com.openmdm.agent.util.DeviceOwnerManager
 import com.openmdm.library.command.CommandType
 import com.openmdm.library.file.FileDeployment
+import com.openmdm.library.device.VisibilityMode
 import com.openmdm.library.policy.KioskConfig
+import com.openmdm.library.policy.LauncherConfig
 import com.openmdm.library.policy.PolicyMapper
 import com.openmdm.library.policy.WifiNetworkConfig
 import com.openmdm.library.policy.WifiSecurityType
+import android.content.ComponentName
+import android.util.Log
+import com.google.gson.Gson
+import com.openmdm.agent.data.local.dao.CommandDao
+import com.openmdm.agent.data.local.entity.CommandEntity
+import com.openmdm.agent.ui.launcher.LauncherActivity
+import com.openmdm.agent.worker.CommandWorker
+import com.openmdm.agent.worker.WorkScheduler
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
@@ -36,6 +46,13 @@ import javax.inject.Inject
  *
  * Handles heartbeat scheduling, command processing, and maintains
  * persistent connection with the MDM server.
+ *
+ * Key improvements:
+ * - WorkManager-based heartbeat scheduling (survives process death)
+ * - Command persistence via Room database
+ * - Critical command immediate execution (wipe, lock, etc.)
+ * - Token refresh handling for long-running operations
+ * - Policy settings persistence for kiosk restoration
  */
 @AndroidEntryPoint
 class MDMService : LifecycleService() {
@@ -52,8 +69,21 @@ class MDMService : LifecycleService() {
     @Inject
     lateinit var deviceOwnerManager: DeviceOwnerManager
 
+    @Inject
+    lateinit var workScheduler: WorkScheduler
+
+    @Inject
+    lateinit var commandDao: CommandDao
+
     private var heartbeatJob: Job? = null
     private var heartbeatInterval: Long = DEFAULT_HEARTBEAT_INTERVAL
+    private var heartbeatStarted = false
+
+    /**
+     * Track pending installation commands.
+     * Key: packageName, Value: (commandId, token)
+     */
+    private val pendingInstalls = mutableMapOf<String, Pair<String, String>>()
 
     override fun onCreate() {
         super.onCreate()
@@ -70,6 +100,18 @@ class MDMService : LifecycleService() {
             ACTION_PROCESS_COMMAND -> {
                 val commandJson = intent.getStringExtra(EXTRA_COMMAND)
                 commandJson?.let { processIncomingCommand(it) }
+            }
+            ACTION_INSTALL_COMPLETE -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
+                val success = intent.getBooleanExtra(EXTRA_SUCCESS, false)
+                val message = intent.getStringExtra(EXTRA_MESSAGE)
+                handleInstallComplete(packageName, success, message)
+            }
+            ACTION_UNINSTALL_COMPLETE -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
+                val success = intent.getBooleanExtra(EXTRA_SUCCESS, false)
+                val message = intent.getStringExtra(EXTRA_MESSAGE)
+                handleUninstallComplete(packageName, success, message)
             }
         }
 
@@ -100,33 +142,36 @@ class MDMService : LifecycleService() {
     }
 
     private fun startHeartbeat() {
-        if (heartbeatJob?.isActive == true) return
-
-        heartbeatJob = lifecycleScope.launch {
-            while (isActive) {
-                try {
-                    sendHeartbeat()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-                delay(heartbeatInterval)
-            }
+        // Prevent re-scheduling if already started
+        if (heartbeatStarted) {
+            Log.d(TAG, "Heartbeat already scheduled, skipping")
+            return
         }
+        heartbeatStarted = true
+
+        // Use WorkManager for reliable periodic heartbeats
+        val intervalMinutes = (heartbeatInterval / 60_000).coerceAtLeast(1)
+        workScheduler.scheduleHeartbeat(intervalMinutes)
+
+        // Trigger immediate heartbeat on service start
+        workScheduler.triggerImmediateHeartbeat()
+
+        // Sync any pending commands from previous runs
+        workScheduler.syncPendingCommands()
+
+        Log.i(TAG, "Heartbeat scheduled via WorkManager (interval: ${intervalMinutes}min)")
     }
 
     private fun stopHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = null
+        workScheduler.cancelHeartbeat()
+        heartbeatStarted = false
+        Log.i(TAG, "Heartbeat cancelled")
     }
 
     private fun syncNow() {
-        lifecycleScope.launch {
-            try {
-                sendHeartbeat()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
+        // Trigger immediate heartbeat for sync
+        workScheduler.triggerImmediateHeartbeat()
+        Log.d(TAG, "Immediate sync triggered")
     }
 
     private suspend fun sendHeartbeat() {
@@ -212,17 +257,81 @@ class MDMService : LifecycleService() {
     }
 
     private suspend fun processCommand(command: CommandResponse, token: String) {
+        val commandType = normalizeCommandType(command.type)
+
+        // Critical commands execute immediately without WorkManager
+        if (commandType in CommandWorker.CRITICAL_COMMANDS) {
+            Log.i(TAG, "Executing critical command ${command.id} (type: $commandType) immediately")
+            executeCommandImmediately(command, token)
+            return
+        }
+
+        // Check if command already exists in database (avoid duplicate processing)
+        val existingCommand = commandDao.getCommandById(command.id)
+        if (existingCommand != null) {
+            Log.d(TAG, "Command ${command.id} already in database (status: ${existingCommand.status}), executing directly")
+            // Command already tracked - execute directly
+            executeCommandImmediately(command, token)
+            return
+        }
+
+        // New command: persist to database and schedule via WorkManager
+        Log.d(TAG, "Persisting command ${command.id} (type: $commandType) for reliable execution")
+
+        // Persist command to database
+        commandDao.insertCommand(
+            CommandEntity(
+                id = command.id,
+                type = command.type,
+                payloadJson = command.payload?.let { Gson().toJson(it) },
+                status = CommandEntity.STATUS_PENDING,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+
         // Acknowledge receipt
-        mdmApi.acknowledgeCommand("Bearer $token", command.id)
+        try {
+            mdmApi.acknowledgeCommand("Bearer $token", command.id)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acknowledge command ${command.id}: ${e.message}")
+        }
+
+        // Schedule execution via WorkManager
+        workScheduler.scheduleCommand(
+            commandId = command.id,
+            commandType = command.type,
+            payloadJson = command.payload?.let { Gson().toJson(it) }
+        )
+    }
+
+    /**
+     * Execute a critical command immediately without WorkManager.
+     * Used for wipe, lock, factoryReset, etc. that must execute ASAP.
+     */
+    private suspend fun executeCommandImmediately(command: CommandResponse, token: String) {
+        // Acknowledge receipt
+        try {
+            mdmApi.acknowledgeCommand("Bearer $token", command.id)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acknowledge command ${command.id}: ${e.message}")
+        }
 
         try {
-            val result = executeCommand(command)
+            val result = executeCommand(command, token)
+
+            // Check if this is an async command (installation pending)
+            if (result.message?.contains("pending") == true) {
+                // Don't complete yet - will be completed by handleInstallComplete
+                return
+            }
+
             mdmApi.completeCommand(
                 "Bearer $token",
                 command.id,
                 CommandResultRequest(result.success, result.message, result.data)
             )
         } catch (e: Exception) {
+            Log.e(TAG, "Command ${command.id} failed: ${e.message}")
             mdmApi.failCommand(
                 "Bearer $token",
                 command.id,
@@ -231,8 +340,21 @@ class MDMService : LifecycleService() {
         }
     }
 
-    private suspend fun executeCommand(command: CommandResponse): CommandResult {
-        return when (command.type) {
+    /**
+     * Normalize command type from snake_case to camelCase.
+     * Server may send "install_app" but we handle "installApp".
+     */
+    private fun normalizeCommandType(type: String): String {
+        if (!type.contains("_")) return type
+        return type.split("_").mapIndexed { index, word ->
+            if (index == 0) word.lowercase()
+            else word.replaceFirstChar { it.uppercase() }
+        }.joinToString("")
+    }
+
+    private suspend fun executeCommand(command: CommandResponse, token: String? = null): CommandResult {
+        val commandType = normalizeCommandType(command.type)
+        return when (commandType) {
             // ============================================
             // Device Control Commands
             // ============================================
@@ -298,15 +420,17 @@ class MDMService : LifecycleService() {
                 val autoGrantPermissions = command.payload?.get("autoGrantPermissions") as? Boolean ?: true
 
                 if (packageName != null && url != null) {
+                    // Track this pending installation so we can complete the command later
+                    if (token != null) {
+                        pendingInstalls[packageName] = Pair(command.id, token)
+                    }
+
                     val result = deviceOwnerManager.installApkSilently(url, packageName)
                     if (result.isSuccess) {
-                        // Auto-grant permissions if requested and Device Owner
-                        if (autoGrantPermissions && deviceOwnerManager.isDeviceOwner()) {
-                            deviceOwnerManager.grantCommonPermissions(packageName)
-                            deviceOwnerManager.whitelistFromBatteryOptimization(packageName)
-                        }
-                        CommandResult(true, "App installation initiated for $packageName")
+                        // Installation is PENDING - actual result comes via InstallResultReceiver
+                        CommandResult(true, "App installation pending for $packageName")
                     } else {
+                        pendingInstalls.remove(packageName)
                         CommandResult(false, result.exceptionOrNull()?.message ?: "Installation failed")
                     }
                 } else {
@@ -334,14 +458,73 @@ class MDMService : LifecycleService() {
                 val url = command.payload?.get("url") as? String
 
                 if (packageName != null && url != null) {
+                    // Track this pending update so we can complete the command later
+                    if (token != null) {
+                        pendingInstalls[packageName] = Pair(command.id, token)
+                    }
+
                     val result = deviceOwnerManager.installApkSilently(url, packageName)
                     if (result.isSuccess) {
-                        CommandResult(true, "App update initiated for $packageName")
+                        CommandResult(true, "App update pending for $packageName")
                     } else {
+                        pendingInstalls.remove(packageName)
                         CommandResult(false, result.exceptionOrNull()?.message ?: "Update failed")
                     }
                 } else {
                     CommandResult(false, "Invalid update parameters")
+                }
+            }
+
+            // ============================================
+            // Secure Agent Self-Update Command
+            // ============================================
+            "updateAgent" -> {
+                // Secure agent self-update with hash verification and downgrade protection
+                val url = command.payload?.get("url") as? String
+                val sha256 = command.payload?.get("sha256") as? String
+                val version = command.payload?.get("version") as? String
+                val versionCode = (command.payload?.get("versionCode") as? Number)?.toInt()
+                val minPreviousVersion = command.payload?.get("minPreviousVersion") as? String
+
+                if (url != null && sha256 != null && version != null && versionCode != null) {
+                    val params = DeviceOwnerManager.SecureUpdateParams(
+                        apkUrl = url,
+                        packageName = packageName, // agent's own package
+                        expectedSha256 = sha256,
+                        targetVersion = version,
+                        targetVersionCode = versionCode,
+                        minPreviousVersion = minPreviousVersion,
+                        isSelfUpdate = true
+                    )
+
+                    val result = deviceOwnerManager.installApkSecurely(params)
+
+                    if (result.success) {
+                        // Report success with version info
+                        CommandResult(
+                            success = true,
+                            message = "Agent update initiated: ${result.fromVersion} -> ${result.toVersion}",
+                            data = mapOf(
+                                "fromVersion" to result.fromVersion,
+                                "toVersion" to result.toVersion
+                            )
+                        )
+                    } else {
+                        CommandResult(
+                            success = false,
+                            message = result.message,
+                            data = mapOf(
+                                "error" to (result.error ?: "UNKNOWN"),
+                                "fromVersion" to result.fromVersion,
+                                "toVersion" to result.toVersion
+                            )
+                        )
+                    }
+                } else {
+                    CommandResult(
+                        success = false,
+                        message = "Invalid agent update parameters. Required: url, sha256, version, versionCode"
+                    )
                 }
             }
 
@@ -762,14 +945,206 @@ class MDMService : LifecycleService() {
             }
 
             else -> {
-                CommandResult(false, "Unknown command type: ${command.type}")
+                val originalType = command.type
+                CommandResult(false, "Unknown command type: $commandType (original: $originalType)")
+            }
+        }
+    }
+
+    /**
+     * Handle installation complete callback from InstallResultReceiver.
+     * Completes the pending MDM command and applies post-install setup on success.
+     */
+    private fun handleInstallComplete(packageName: String?, success: Boolean, message: String?) {
+        if (packageName == null) return
+
+        lifecycleScope.launch {
+            try {
+                // Complete the pending command if we have one
+                val pendingCommand = pendingInstalls.remove(packageName)
+                if (pendingCommand != null) {
+                    val (commandId, _) = pendingCommand
+                    // Get fresh token - the stored token may have expired during download/install
+                    reportCommandResult(commandId, packageName, success, message)
+                }
+
+                val state = mdmRepository.getEnrollmentState()
+                if (!state.isEnrolled || state.token == null) return@launch
+
+                // Report install result to server as an event (for logging/analytics)
+                mdmApi.reportEvent(
+                    "Bearer ${state.token}",
+                    EventRequest(
+                        type = "app_install",
+                        payload = mapOf(
+                            "packageName" to packageName,
+                            "success" to success,
+                            "message" to (message ?: ""),
+                            "timestamp" to System.currentTimeMillis()
+                        ),
+                        timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+                            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+                            .format(Date())
+                    )
+                )
+
+                // On success, apply post-install setup
+                if (success && deviceOwnerManager.isDeviceOwner()) {
+                    deviceOwnerManager.grantCommonPermissions(packageName)
+                    deviceOwnerManager.whitelistFromBatteryOptimization(packageName)
+                    Log.i(TAG, "Post-install setup completed for $packageName: permissions granted, battery whitelisted")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to handle install complete: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Report command result to server with token refresh handling.
+     * This fixes the token expiration issue where the stored token expires
+     * during long-running operations like app downloads.
+     */
+    private suspend fun reportCommandResult(
+        commandId: String,
+        packageName: String,
+        success: Boolean,
+        message: String?
+    ) {
+        var state = mdmRepository.getEnrollmentState()
+        var token = state.token
+
+        if (token == null) {
+            Log.w(TAG, "No token available to report command result")
+            return
+        }
+
+        // Try to report with current token
+        val response = try {
+            if (success) {
+                mdmApi.completeCommand(
+                    "Bearer $token",
+                    commandId,
+                    CommandResultRequest(true, "App $packageName installed successfully", null)
+                )
+            } else {
+                mdmApi.failCommand(
+                    "Bearer $token",
+                    commandId,
+                    CommandErrorRequest(message ?: "Installation failed")
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to report command result: ${e.message}")
+            null
+        }
+
+        // If token expired (401), refresh and retry
+        if (response?.code() == 401) {
+            Log.w(TAG, "Token expired, attempting refresh before reporting command result")
+            val refreshToken = state.refreshToken
+            if (refreshToken != null) {
+                try {
+                    val refreshResponse = mdmApi.refreshToken(RefreshTokenRequest(refreshToken))
+                    if (refreshResponse.isSuccessful) {
+                        refreshResponse.body()?.let { body ->
+                            mdmRepository.updateToken(body.token, body.refreshToken)
+                            token = body.token
+
+                            // Retry with new token
+                            try {
+                                if (success) {
+                                    mdmApi.completeCommand(
+                                        "Bearer $token",
+                                        commandId,
+                                        CommandResultRequest(true, "App $packageName installed successfully", null)
+                                    )
+                                } else {
+                                    mdmApi.failCommand(
+                                        "Bearer $token",
+                                        commandId,
+                                        CommandErrorRequest(message ?: "Installation failed")
+                                    )
+                                }
+                                Log.i(TAG, "Command $commandId result reported after token refresh")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to report after token refresh: ${e.message}")
+                            }
+                        }
+                    } else {
+                        Log.e(TAG, "Token refresh failed with ${refreshResponse.code()}")
+                        // Refresh failed - might need to re-enroll
+                        if (refreshResponse.code() == 401) {
+                            mdmRepository.clearEnrollment()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Token refresh error: ${e.message}")
+                }
+            }
+        } else if (response?.isSuccessful == true) {
+            Log.i(TAG, "Command $commandId result reported successfully")
+        }
+    }
+
+    /**
+     * Handle uninstallation complete callback from InstallResultReceiver.
+     * Reports result to server.
+     */
+    private fun handleUninstallComplete(packageName: String?, success: Boolean, message: String?) {
+        if (packageName == null) return
+
+        lifecycleScope.launch {
+            try {
+                val state = mdmRepository.getEnrollmentState()
+                if (!state.isEnrolled || state.token == null) return@launch
+
+                // Report uninstall result to server as an event
+                mdmApi.reportEvent(
+                    "Bearer ${state.token}",
+                    EventRequest(
+                        type = "app_uninstall",
+                        payload = mapOf(
+                            "packageName" to packageName,
+                            "success" to success,
+                            "message" to (message ?: ""),
+                            "timestamp" to System.currentTimeMillis()
+                        ),
+                        timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+                            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+                            .format(Date())
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to handle uninstall complete: ${e.message}")
             }
         }
     }
 
     private fun processIncomingCommand(commandJson: String) {
         lifecycleScope.launch {
-            // Parse and process push command
+            try {
+                Log.d(TAG, "Processing incoming command: $commandJson")
+
+                // Parse the command JSON
+                val command = Gson().fromJson(commandJson, CommandResponse::class.java)
+                if (command == null) {
+                    Log.e(TAG, "Failed to parse command JSON")
+                    return@launch
+                }
+
+                // Get auth token
+                val state = mdmRepository.getEnrollmentState()
+                if (!state.isEnrolled || state.token == null) {
+                    Log.w(TAG, "Cannot process command - device not enrolled")
+                    return@launch
+                }
+
+                // Process the command
+                processCommand(command, state.token)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing incoming command: ${e.message}", e)
+            }
         }
     }
 
@@ -855,8 +1230,47 @@ class MDMService : LifecycleService() {
                     }
                 }
 
+                // Apply launcher/app visibility settings
+                if (settings.launcherEnabled || settings.allowedApps.isNotEmpty() ||
+                    settings.blockedApps.isNotEmpty()) {
+
+                    val launcherManager = deviceOwnerManager.getLauncherManager()
+
+                    // Determine visibility mode from launcher settings
+                    val mode = when (settings.launcherMode) {
+                        "allowlist" -> VisibilityMode.ALLOWLIST
+                        "blocklist" -> VisibilityMode.BLOCKLIST
+                        else -> VisibilityMode.DEFAULT
+                    }
+
+                    // Apply app visibility policy
+                    launcherManager.applyVisibilityPolicy(
+                        allowedApps = settings.allowedApps,
+                        blockedApps = settings.blockedApps,
+                        mode = mode
+                    )
+
+                    // Set as default launcher if requested and Device Owner
+                    if (settings.setAsDefaultLauncher && deviceOwnerManager.isDeviceOwner()) {
+                        val launcherActivity = ComponentName(
+                            this@MDMService,
+                            LauncherActivity::class.java
+                        )
+                        launcherManager.setAsDefaultLauncher(launcherActivity)
+                    }
+
+                    Log.i(TAG, "Applied launcher/app visibility settings")
+                }
+
+                // Always save full policy settings for kiosk mode restoration on boot
+                // This is used by BootReceiver and PackageInstalledReceiver
+                val fullPolicySettings = PolicyMapper.toMap(settings)
+                val fullSettingsJson = Gson().toJson(fullPolicySettings)
+                mdmRepository.savePolicySettings(fullSettingsJson)
+                Log.i(TAG, "Saved full policy settings (kioskMode=${settings.kioskMode}, mainApp=${settings.mainApp})")
+
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Error applying policy: ${e.message}", e)
             }
         }
     }
@@ -886,11 +1300,18 @@ class MDMService : LifecycleService() {
     )
 
     companion object {
+        private const val TAG = "OpenMDM.MDMService"
+
         const val ACTION_START = "com.openmdm.agent.START"
         const val ACTION_STOP = "com.openmdm.agent.STOP"
         const val ACTION_SYNC_NOW = "com.openmdm.agent.SYNC_NOW"
         const val ACTION_PROCESS_COMMAND = "com.openmdm.agent.PROCESS_COMMAND"
+        const val ACTION_INSTALL_COMPLETE = "com.openmdm.agent.INSTALL_COMPLETE"
+        const val ACTION_UNINSTALL_COMPLETE = "com.openmdm.agent.UNINSTALL_COMPLETE"
         const val EXTRA_COMMAND = "command"
+        const val EXTRA_PACKAGE_NAME = "packageName"
+        const val EXTRA_SUCCESS = "success"
+        const val EXTRA_MESSAGE = "message"
 
         private const val NOTIFICATION_ID = 1001
         private const val DEFAULT_HEARTBEAT_INTERVAL = 60_000L // 1 minute

@@ -1,9 +1,18 @@
 package com.openmdm.agent.di
 
 import android.content.Context
+import androidx.room.Room
+import androidx.work.WorkManager
 import com.openmdm.agent.BuildConfig
 import com.openmdm.agent.data.MDMApi
 import com.openmdm.agent.data.MDMRepository
+import com.openmdm.agent.data.local.MDMDatabase
+import com.openmdm.agent.data.local.dao.CommandDao
+import com.openmdm.agent.data.repository.AppRepositoryImpl
+import com.openmdm.agent.domain.repository.IAppRepository
+import com.openmdm.agent.domain.repository.IEnrollmentRepository
+import com.openmdm.agent.network.RetryInterceptor
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,8 +31,9 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideOkHttpClient(retryInterceptor: RetryInterceptor): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(retryInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -60,4 +70,52 @@ object AppModule {
     fun provideMDMRepository(@ApplicationContext context: Context): MDMRepository {
         return MDMRepository(context)
     }
+
+    // ============================================
+    // Room Database
+    // ============================================
+
+    @Provides
+    @Singleton
+    fun provideMDMDatabase(@ApplicationContext context: Context): MDMDatabase {
+        return Room.databaseBuilder(
+            context,
+            MDMDatabase::class.java,
+            MDMDatabase.DATABASE_NAME
+        ).build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideCommandDao(database: MDMDatabase): CommandDao {
+        return database.commandDao()
+    }
+
+    // ============================================
+    // WorkManager
+    // ============================================
+
+    @Provides
+    @Singleton
+    fun provideWorkManager(@ApplicationContext context: Context): WorkManager {
+        return WorkManager.getInstance(context)
+    }
+}
+
+/**
+ * Module for binding interfaces to implementations.
+ *
+ * Uses @Binds for efficient interface-to-implementation binding.
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class RepositoryModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindEnrollmentRepository(impl: MDMRepository): IEnrollmentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAppRepository(impl: AppRepositoryImpl): IAppRepository
 }

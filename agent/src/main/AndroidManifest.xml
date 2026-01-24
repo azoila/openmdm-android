@@ -45,14 +45,28 @@
         android:theme="@style/Theme.OpenMDMAgent"
         tools:targetApi="34">
 
-        <!-- Main Activity -->
+        <!-- Main Activity (Admin Panel) -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@style/Theme.OpenMDMAgent">
+            <!-- No LAUNCHER category - accessed via admin panel from launcher -->
+        </activity>
+
+        <!-- MDM Launcher Activity (Home Screen & App Entry Point) -->
+        <activity
+            android:name=".ui.launcher.LauncherActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:clearTaskOnLaunch="true"
+            android:stateNotNeeded="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.OpenMDMAgent">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
@@ -115,6 +129,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- Package Installed Receiver for kiosk auto-launch -->
+        <receiver
+            android:name=".receiver.PackageInstalledReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
         <!-- WorkManager Initializer -->
         <provider
             android:name="androidx.startup.InitializationProvider"
@@ -126,6 +151,28 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!-- MDM Content Provider for other apps to query enrollment info -->
+        <!-- No permission required - managed apps need to query this freely -->
+        <provider
+            android:name=".provider.MDMContentProvider"
+            android:authorities="com.openmdm.agent.provider"
+            android:exported="true"
+            android:grantUriPermissions="false">
+        </provider>
+
+        <!-- MDM Integration Service for app binding (HeadwindMDM-compatible) -->
+        <service
+            android:name=".service.MDMIntegrationService"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <!-- OpenMDM connect action -->
+                <action android:name="com.openmdm.action.Connect" />
+                <!-- HeadwindMDM-compatible connect action for broader compatibility -->
+                <action android:name="com.hmdm.action.Connect" />
+            </intent-filter>
+        </service>
 
     </application>
 
