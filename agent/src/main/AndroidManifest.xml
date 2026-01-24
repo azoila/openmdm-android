@@ -129,6 +129,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- Package Installed Receiver for kiosk auto-launch -->
+        <receiver
+            android:name=".receiver.PackageInstalledReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
         <!-- WorkManager Initializer -->
         <provider
             android:name="androidx.startup.InitializationProvider"

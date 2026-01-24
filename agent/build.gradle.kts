@@ -127,6 +127,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.work.testing)
 
     // Android Instrumentation Testing
     androidTestImplementation(libs.androidx.test.core)

@@ -49,6 +49,7 @@ class MDMRepository @Inject constructor(
         val POLICY_VERSION = stringPreferencesKey("policy_version")
         val POLICY_SETTINGS = stringPreferencesKey("policy_settings")
         val LAST_SYNC = stringPreferencesKey("last_sync")
+        val PUSH_TOKEN = stringPreferencesKey("push_token")
     }
 
     override val enrollmentState: Flow<EnrollmentState> = context.dataStore.data.map { preferences ->
@@ -130,5 +131,21 @@ class MDMRepository @Inject constructor(
      */
     suspend fun getPolicySettingsJson(): String? {
         return context.dataStore.data.first()[Keys.POLICY_SETTINGS]
+    }
+
+    /**
+     * Save FCM push token to avoid re-registration.
+     */
+    suspend fun savePushToken(token: String) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.PUSH_TOKEN] = token
+        }
+    }
+
+    /**
+     * Get saved push token.
+     */
+    suspend fun getPushToken(): String? {
+        return context.dataStore.data.first()[Keys.PUSH_TOKEN]
     }
 }

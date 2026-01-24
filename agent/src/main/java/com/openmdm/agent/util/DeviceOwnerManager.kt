@@ -20,12 +20,14 @@ import com.openmdm.library.device.RestrictionManager
 import com.openmdm.library.device.ScreenManager
 import com.openmdm.library.file.FileDeploymentManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.net.URL
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -136,8 +138,154 @@ class DeviceOwnerManager @Inject constructor(
     // App Installation Commands
     // ============================================
 
+    companion object {
+        private const val TAG = "DeviceOwnerManager"
+    }
+
     /**
-     * Install APK silently (requires Device Owner)
+     * Data class for secure update parameters
+     */
+    data class SecureUpdateParams(
+        val apkUrl: String,
+        val packageName: String,
+        val expectedSha256: String,
+        val targetVersion: String,
+        val targetVersionCode: Int,
+        val minPreviousVersion: String? = null,
+        val isSelfUpdate: Boolean = false
+    )
+
+    /**
+     * Data class for update result with detailed status
+     */
+    data class UpdateResult(
+        val success: Boolean,
+        val message: String,
+        val fromVersion: String? = null,
+        val toVersion: String? = null,
+        val error: String? = null
+    )
+
+    /**
+     * Install APK silently with security verification (requires Device Owner)
+     *
+     * Security features:
+     * - SHA-256 hash verification
+     * - Downgrade protection
+     * - State backup for agent self-updates
+     * - Version constraint checking
+     */
+    suspend fun installApkSecurely(params: SecureUpdateParams): UpdateResult = withContext(Dispatchers.IO) {
+        try {
+            if (!isDeviceOwner()) {
+                return@withContext UpdateResult(
+                    success = false,
+                    message = "Silent install requires Device Owner",
+                    error = "DEVICE_OWNER_REQUIRED"
+                )
+            }
+
+            // Get current version info
+            val currentVersionInfo = try {
+                val packageInfo = packageManager.getPackageInfo(params.packageName, 0)
+                Pair(packageInfo.versionName ?: "unknown", packageInfo.longVersionCode.toInt())
+            } catch (e: PackageManager.NameNotFoundException) {
+                Pair("0.0.0", 0)
+            }
+
+            val (currentVersion, currentVersionCode) = currentVersionInfo
+
+            Log.i(TAG, "🔄 Secure update: ${params.packageName} from $currentVersion to ${params.targetVersion}")
+
+            // Downgrade protection: prevent installing older versions
+            if (params.targetVersionCode < currentVersionCode) {
+                Log.w(TAG, "⛔ Downgrade attempt blocked: $currentVersionCode -> ${params.targetVersionCode}")
+                return@withContext UpdateResult(
+                    success = false,
+                    message = "Downgrade not allowed",
+                    fromVersion = currentVersion,
+                    toVersion = params.targetVersion,
+                    error = "DOWNGRADE_BLOCKED"
+                )
+            }
+
+            // Check minimum previous version constraint
+            if (params.minPreviousVersion != null) {
+                if (compareVersions(currentVersion, params.minPreviousVersion) < 0) {
+                    Log.w(TAG, "⛔ Version constraint failed: $currentVersion < ${params.minPreviousVersion}")
+                    return@withContext UpdateResult(
+                        success = false,
+                        message = "Current version too old. Update to ${params.minPreviousVersion} first.",
+                        fromVersion = currentVersion,
+                        toVersion = params.targetVersion,
+                        error = "VERSION_CONSTRAINT_FAILED"
+                    )
+                }
+            }
+
+            // Backup state for agent self-update
+            if (params.isSelfUpdate) {
+                Log.i(TAG, "📦 Backing up agent state before self-update")
+                backupAgentState()
+            }
+
+            // Download APK
+            Log.i(TAG, "⬇️ Downloading APK from ${params.apkUrl}")
+            val apkFile = downloadApk(params.apkUrl, params.packageName)
+
+            // Verify SHA-256 hash
+            Log.i(TAG, "🔐 Verifying SHA-256 hash")
+            val actualHash = calculateSha256(apkFile)
+            if (!actualHash.equals(params.expectedSha256, ignoreCase = true)) {
+                apkFile.delete()
+                Log.e(TAG, "⛔ Hash mismatch! Expected: ${params.expectedSha256}, Got: $actualHash")
+                return@withContext UpdateResult(
+                    success = false,
+                    message = "APK hash verification failed",
+                    fromVersion = currentVersion,
+                    toVersion = params.targetVersion,
+                    error = "HASH_MISMATCH"
+                )
+            }
+            Log.i(TAG, "✅ Hash verified: $actualHash")
+
+            // Install using PackageInstaller
+            Log.i(TAG, "📲 Installing APK via PackageInstaller")
+            val result = installWithPackageInstaller(apkFile, params.packageName)
+
+            // Clean up
+            apkFile.delete()
+
+            if (result.isSuccess) {
+                Log.i(TAG, "✅ Update initiated: ${params.packageName} -> ${params.targetVersion}")
+                UpdateResult(
+                    success = true,
+                    message = "Update initiated successfully",
+                    fromVersion = currentVersion,
+                    toVersion = params.targetVersion
+                )
+            } else {
+                Log.e(TAG, "❌ Update failed: ${result.exceptionOrNull()?.message}")
+                UpdateResult(
+                    success = false,
+                    message = result.exceptionOrNull()?.message ?: "Installation failed",
+                    fromVersion = currentVersion,
+                    toVersion = params.targetVersion,
+                    error = "INSTALL_FAILED"
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Secure update exception", e)
+            UpdateResult(
+                success = false,
+                message = e.message ?: "Unknown error",
+                error = "EXCEPTION"
+            )
+        }
+    }
+
+    /**
+     * Install APK silently (requires Device Owner) - Legacy method, use installApkSecurely for production
      */
     suspend fun installApkSilently(apkUrl: String, packageName: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
@@ -157,6 +305,114 @@ class DeviceOwnerManager @Inject constructor(
             result
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Calculate SHA-256 hash of a file
+     */
+    private fun calculateSha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { fis ->
+            val buffer = ByteArray(8192)
+            var bytesRead: Int
+            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                digest.update(buffer, 0, bytesRead)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Compare semantic versions (e.g., "1.2.3" vs "1.2.4")
+     * Returns: negative if v1 < v2, 0 if equal, positive if v1 > v2
+     */
+    private fun compareVersions(v1: String, v2: String): Int {
+        val parts1 = v1.split(".").map { it.toIntOrNull() ?: 0 }
+        val parts2 = v2.split(".").map { it.toIntOrNull() ?: 0 }
+        val maxLength = maxOf(parts1.size, parts2.size)
+
+        for (i in 0 until maxLength) {
+            val p1 = parts1.getOrElse(i) { 0 }
+            val p2 = parts2.getOrElse(i) { 0 }
+            if (p1 != p2) return p1 - p2
+        }
+        return 0
+    }
+
+    /**
+     * Backup agent state before self-update
+     */
+    private fun backupAgentState() {
+        try {
+            val backupDir = File(context.filesDir, "agent_backup")
+            if (!backupDir.exists()) backupDir.mkdirs()
+
+            // Backup shared preferences
+            val prefsDir = File(context.dataDir, "shared_prefs")
+            if (prefsDir.exists()) {
+                prefsDir.listFiles()?.forEach { file ->
+                    file.copyTo(File(backupDir, file.name), overwrite = true)
+                }
+            }
+
+            // Create backup marker with timestamp
+            File(backupDir, "backup_marker.txt").writeText(
+                "backup_time=${System.currentTimeMillis()}\n" +
+                "version=${context.packageManager.getPackageInfo(context.packageName, 0).versionName}\n"
+            )
+
+            Log.i(TAG, "✅ Agent state backed up to $backupDir")
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ Failed to backup agent state", e)
+        }
+    }
+
+    /**
+     * Restore agent state after update (called from BootReceiver)
+     */
+    fun restoreAgentState(): Boolean {
+        try {
+            val backupDir = File(context.filesDir, "agent_backup")
+            if (!backupDir.exists()) {
+                Log.d(TAG, "No backup to restore")
+                return false
+            }
+
+            val markerFile = File(backupDir, "backup_marker.txt")
+            if (!markerFile.exists()) {
+                Log.d(TAG, "No backup marker found")
+                return false
+            }
+
+            // Check if backup is recent (within last hour)
+            val markerContent = markerFile.readText()
+            val backupTime = markerContent.lines()
+                .find { it.startsWith("backup_time=") }
+                ?.substringAfter("=")?.toLongOrNull() ?: 0
+
+            if (System.currentTimeMillis() - backupTime > 3600000) {
+                Log.d(TAG, "Backup too old, skipping restore")
+                backupDir.deleteRecursively()
+                return false
+            }
+
+            Log.i(TAG, "🔄 Restoring agent state from backup")
+
+            // Restore shared preferences
+            val prefsDir = File(context.dataDir, "shared_prefs")
+            backupDir.listFiles()?.filter { it.name.endsWith(".xml") }?.forEach { file ->
+                file.copyTo(File(prefsDir, file.name), overwrite = true)
+            }
+
+            // Clean up backup
+            backupDir.deleteRecursively()
+
+            Log.i(TAG, "✅ Agent state restored successfully")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ Failed to restore agent state", e)
+            return false
         }
     }
 

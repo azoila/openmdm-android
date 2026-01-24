@@ -255,11 +255,11 @@ class LauncherViewModelTest {
             showBottomBar = true
         )
 
-        // Setup mock for allowlist mode
-        every { launchAppUseCase.isAppAllowed("com.allowed", config) } returns true
-        every { launchAppUseCase.isAppAllowed("com.not.allowed", config) } returns false
-        every { launchAppUseCase.isAppAllowed(testPackageName, config) } returns true
-        every { launchAppUseCase.isAppAllowed("com.android.settings", config) } returns true
+        // Setup mock for allowlist mode - use any() for config to avoid reference matching issues
+        every { launchAppUseCase.isAppAllowed("com.allowed", any()) } returns true
+        every { launchAppUseCase.isAppAllowed("com.not.allowed", any()) } returns false
+        every { launchAppUseCase.isAppAllowed(testPackageName, any()) } returns true
+        every { launchAppUseCase.isAppAllowed("com.android.settings", any()) } returns true
 
         viewModel.updateConfig(config)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -287,9 +287,9 @@ class LauncherViewModelTest {
             showBottomBar = true
         )
 
-        // Setup mock for blocklist mode
-        every { launchAppUseCase.isAppAllowed("com.blocked", config) } returns false
-        every { launchAppUseCase.isAppAllowed("com.not.blocked", config) } returns true
+        // Setup mock for blocklist mode - use any() for config to avoid reference matching issues
+        every { launchAppUseCase.isAppAllowed("com.blocked", any()) } returns false
+        every { launchAppUseCase.isAppAllowed("com.not.blocked", any()) } returns true
 
         viewModel.updateConfig(config)
         testDispatcher.scheduler.advanceUntilIdle()

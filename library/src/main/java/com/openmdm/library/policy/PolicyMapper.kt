@@ -1,5 +1,8 @@
 package com.openmdm.library.policy
 
+import org.json.JSONArray
+import org.json.JSONObject
+
 /**
  * Maps raw policy Map<String, Any?> from server to typed PolicySettings.
  *
@@ -7,6 +10,49 @@ package com.openmdm.library.policy
  * with various server formats.
  */
 object PolicyMapper {
+
+    /**
+     * Convert a JSON string to typed PolicySettings
+     */
+    fun fromJson(json: String): PolicySettings {
+        val jsonObject = JSONObject(json)
+        val map = jsonObjectToMap(jsonObject)
+        return fromMap(map)
+    }
+
+    /**
+     * Convert a JSONObject to a Map recursively
+     */
+    private fun jsonObjectToMap(jsonObject: JSONObject): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        jsonObject.keys().forEach { key ->
+            val value = jsonObject.get(key)
+            map[key] = when (value) {
+                JSONObject.NULL -> null
+                is JSONObject -> jsonObjectToMap(value)
+                is JSONArray -> jsonArrayToList(value)
+                else -> value
+            }
+        }
+        return map
+    }
+
+    /**
+     * Convert a JSONArray to a List recursively
+     */
+    private fun jsonArrayToList(jsonArray: JSONArray): List<Any?> {
+        val list = mutableListOf<Any?>()
+        for (i in 0 until jsonArray.length()) {
+            val value = jsonArray.get(i)
+            list.add(when (value) {
+                JSONObject.NULL -> null
+                is JSONObject -> jsonObjectToMap(value)
+                is JSONArray -> jsonArrayToList(value)
+                else -> value
+            })
+        }
+        return list
+    }
 
     /**
      * Convert a raw policy map to typed PolicySettings
