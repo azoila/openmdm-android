@@ -7,7 +7,29 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Generates HMAC signatures for device enrollment
+ * Generates HMAC signatures for device enrollment.
+ *
+ * The canonical message is a nine-field pipe-delimited string:
+ *
+ *   model | manufacturer | osVersion | serialNumber | imei | macAddress | androidId | method | timestamp
+ *
+ * Empty optional identifiers are rendered as empty strings (NOT omitted) so
+ * the field count is stable. This matches the server-side
+ * `verifyEnrollmentSignature` in `@openmdm/core@^0.7.0` and the contract test
+ * at `packages/core/tests/enrollment-signature.test.ts` in the openmdm repo.
+ *
+ * **Historical note.** Prior to this fix, the canonical form was
+ * `"{identifier}:{timestamp}"` where `identifier` was the first non-empty
+ * of `macAddress`, `serialNumber`, `imei`, or `androidId`. That form was
+ * inherited from the pre-openmdm-0.7.0 server and was silently
+ * incompatible with the current openmdm server — every enrollment failed
+ * with "Invalid enrollment signature" and nobody noticed because the
+ * agent doesn't surface enrollment errors loudly. If you are debugging
+ * enrollment against an older openmdm server (< 0.7.0), use a matching
+ * older version of this library, or upgrade the server first.
+ *
+ * Any change to the field list, order, or separator is a wire break and
+ * must land in lockstep with the server side.
  */
 @Singleton
 class SignatureGenerator @Inject constructor() {
@@ -15,12 +37,8 @@ class SignatureGenerator @Inject constructor() {
     private val secret: String = BuildConfig.DEVICE_SECRET
 
     /**
-     * Generate enrollment signature
-     *
-     * The signature is an HMAC-SHA256 of: "{identifier}:{timestamp}"
-     * where identifier is the first available of: macAddress, serialNumber, imei, or androidId
-     *
-     * This matches the OpenMDM server's verifyEnrollmentSignature function.
+     * Generate an HMAC-SHA256 enrollment signature over the canonical
+     * nine-field message. Returns a lowercase hex string.
      */
     fun generateEnrollmentSignature(
         model: String,
@@ -33,15 +51,18 @@ class SignatureGenerator @Inject constructor() {
         method: String,
         timestamp: String
     ): String {
-        // Use the same identifier priority as the server:
-        // macAddress || serialNumber || imei || androidId
-        val identifier = macAddress?.takeIf { it.isNotEmpty() }
-            ?: serialNumber?.takeIf { it.isNotEmpty() }
-            ?: imei?.takeIf { it.isNotEmpty() }
-            ?: androidId?.takeIf { it.isNotEmpty() }
-            ?: ""
+        val message = listOf(
+            model,
+            manufacturer,
+            osVersion,
+            serialNumber.orEmpty(),
+            imei.orEmpty(),
+            macAddress.orEmpty(),
+            androidId.orEmpty(),
+            method,
+            timestamp
+        ).joinToString(separator = "|")
 
-        val message = "$identifier:$timestamp"
         return hmacSha256(message, secret)
     }
 
