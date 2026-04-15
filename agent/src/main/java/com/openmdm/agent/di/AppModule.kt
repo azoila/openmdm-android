@@ -11,6 +11,7 @@ import com.openmdm.agent.data.local.dao.CommandDao
 import com.openmdm.agent.data.repository.AppRepositoryImpl
 import com.openmdm.agent.domain.repository.IAppRepository
 import com.openmdm.agent.domain.repository.IEnrollmentRepository
+import com.openmdm.agent.network.ProtocolHeaderInterceptor
 import com.openmdm.agent.network.RetryInterceptor
 import dagger.Binds
 import dagger.Module
@@ -31,8 +32,14 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(retryInterceptor: RetryInterceptor): OkHttpClient {
+    fun provideOkHttpClient(
+        protocolHeaderInterceptor: ProtocolHeaderInterceptor,
+        retryInterceptor: RetryInterceptor,
+    ): OkHttpClient {
         return OkHttpClient.Builder()
+            // Protocol header must be stamped FIRST so the retry
+            // interceptor's synthetic requests carry it too.
+            .addInterceptor(protocolHeaderInterceptor)
             .addInterceptor(retryInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
