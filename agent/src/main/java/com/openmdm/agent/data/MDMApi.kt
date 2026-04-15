@@ -8,6 +8,32 @@ import retrofit2.http.*
  */
 interface MDMApi {
 
+    /**
+     * Phase 2b: fetch a single-use enrollment challenge.
+     *
+     * The server returns a fresh nonce that the agent must:
+     *  1. Include in the canonical enrollment message it signs.
+     *  2. Echo back in the `attestationChallenge` field of the
+     *     subsequent [enroll] request.
+     *
+     * Challenges are atomically consumed on first use — a second
+     * enrollment request reusing the same challenge is rejected
+     * with a `ChallengeInvalidError`. Default TTL is 5 minutes.
+     *
+     * Unauthenticated by design: the agent has no credentials yet
+     * at this point in the flow, and a challenge is only useful
+     * combined with a valid ECDSA signature nobody can produce
+     * without the device's Keystore-held private key.
+     *
+     * The server returns 503 if challenge storage is not configured
+     * (e.g. running against an adapter without the enrollment
+     * challenge table). The agent should treat 503 as "pinned-key
+     * enrollment is not supported by this server version, fall
+     * back to HMAC" rather than as a retry target.
+     */
+    @GET("agent/enroll/challenge")
+    suspend fun fetchEnrollmentChallenge(): Response<EnrollmentChallengeResponse>
+
     @POST("agent/enroll")
     suspend fun enroll(@Body request: EnrollmentRequest): Response<EnrollmentResponse>
 
@@ -86,9 +112,45 @@ data class EnrollmentRequest(
     val agentPackage: String,
     val method: String,
     val timestamp: String,
+    /**
+     * Phase 2a HMAC path: hex-encoded HMAC-SHA256 of the nine-field
+     * canonical form (see `SignatureGenerator`).
+     *
+     * Phase 2b device-pinned-key path: base64-encoded DER ECDSA-P256
+     * signature over the eleven-field canonical form (see
+     * `CanonicalEnrollmentMessage`). The server distinguishes the
+     * two paths by whether [publicKey] is present.
+     */
     val signature: String,
+
+    /**
+     * Phase 2b: base64-encoded SPKI EC P-256 public key generated
+     * in the device's Keystore. Null on the legacy HMAC path; the
+     * server pins this key on the device row on first enroll and
+     * rejects any future enrollment that tries a different key.
+     */
+    val publicKey: String? = null,
+
+    /**
+     * Phase 2b: echoed challenge from [MDMApi.fetchEnrollmentChallenge].
+     * Required whenever [publicKey] is present. Null on the HMAC
+     * path.
+     */
+    val attestationChallenge: String? = null,
+
     val policyId: String? = null,
     val groupId: String? = null
+)
+
+/**
+ * Phase 2b: response from `GET /agent/enroll/challenge`. The
+ * `challenge` string goes into the canonical signed message and
+ * the [EnrollmentRequest.attestationChallenge] field.
+ */
+data class EnrollmentChallengeResponse(
+    val challenge: String,
+    val expiresAt: String,
+    val ttlSeconds: Int
 )
 
 data class EnrollmentResponse(
