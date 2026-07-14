@@ -226,7 +226,11 @@ class KioskManager private constructor(
      */
     fun setLockTaskFeatures(features: Int): Result<Unit> = runCatching {
         require(isDeviceOwner()) { "Lock task features require Device Owner" }
-        require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) { "Lock task features require Android 9+" }
+        // Explicit if/throw instead of require(): lint only recognizes this form
+        // as an SDK_INT guard for the NewApi check.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            throw IllegalArgumentException("Lock task features require Android 9+")
+        }
 
         devicePolicyManager.setLockTaskFeatures(adminComponent, features)
     }
