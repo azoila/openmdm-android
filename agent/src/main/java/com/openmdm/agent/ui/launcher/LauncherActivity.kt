@@ -70,6 +70,9 @@ class LauncherActivity : ComponentActivity() {
      * Block the back button to prevent exiting the launcher.
 '     * This is intentional for MDM launcher functionality.
      */
+    // Omitting super.onBackPressed() is the point: this activity is a kiosk
+    // launcher and the back button must not exit it.
+    @Suppress("MissingSuperCall", "GestureBackNavigation")
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         // Do nothing - prevent users from exiting the launcher

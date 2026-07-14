@@ -176,15 +176,15 @@ class HardwareManager private constructor(
     /**
      * Enable or disable GPS/Location services.
      *
-     * Uses DevicePolicyManager.setLocationEnabled (Android 9+)
+     * Uses DevicePolicyManager.setLocationEnabled (Android 11+)
      */
     fun setGpsEnabled(enabled: Boolean): Result<Unit> = runCatching {
         require(isDeviceOwner()) { "GPS control requires Device Owner" }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             devicePolicyManager.setLocationEnabled(adminComponent, enabled)
         } else {
-            // Android 8.1 and below: Use Settings.Secure
+            // Android 10 and below: Use Settings.Secure
             val mode = if (enabled) {
                 Settings.Secure.LOCATION_MODE_HIGH_ACCURACY
             } else {
