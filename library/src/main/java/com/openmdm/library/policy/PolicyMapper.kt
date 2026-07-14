@@ -127,6 +127,11 @@ object PolicyMapper {
             // Network Configuration
             wifiNetworks = parseWifiNetworks(map["wifiNetworks"]),
 
+            // Enterprise (AMAPI)
+            certificates = parseCertificates(map["certificates"]),
+            osUpdatePolicy = parseOsUpdatePolicy(map["osUpdatePolicy"]),
+            managedConfigurations = parseManagedConfigurations(map["managedConfigurations"]),
+
             // Password Policy
             passwordQuality = map.getInt("passwordQuality"),
             passwordMinLength = map.getInt("passwordMinLength"),
@@ -290,6 +295,27 @@ object PolicyMapper {
             settings.maximumOsVersion?.let { put("maximumOsVersion", it) }
             if (settings.blockedOsVersions.isNotEmpty()) put("blockedOsVersions", settings.blockedOsVersions)
 
+            // Enterprise (AMAPI)
+            if (settings.certificates.isNotEmpty()) {
+                put("certificates", settings.certificates.map { cert ->
+                    buildMap<String, Any?> {
+                        put("certificate", cert.certificate)
+                        cert.privateKey?.let { put("privateKey", it) }
+                        cert.alias?.let { put("alias", it) }
+                    }
+                })
+            }
+            settings.osUpdatePolicy?.let { policy ->
+                put("osUpdatePolicy", buildMap<String, Any?> {
+                    put("type", policy.type)
+                    policy.windowStartMinutes?.let { put("windowStartMinutes", it) }
+                    policy.windowEndMinutes?.let { put("windowEndMinutes", it) }
+                })
+            }
+            if (settings.managedConfigurations.isNotEmpty()) {
+                put("managedConfigurations", settings.managedConfigurations)
+            }
+
             // Logging & Telemetry
             put("logLevel", settings.logLevel)
             put("enableTelemetry", settings.enableTelemetry)
@@ -411,6 +437,45 @@ object PolicyMapper {
                 whitelistBattery = (map["whitelistBattery"] as? Boolean) ?: true
             )
         }
+    }
+
+    private fun parseCertificates(value: Any?): List<CertificatePolicy> {
+        val list = value as? List<*> ?: return emptyList()
+        return list.mapNotNull { item ->
+            val map = item as? Map<*, *> ?: return@mapNotNull null
+            // A certificate row with no certificate is meaningless — drop it
+            // rather than carry an empty policy that looks configured.
+            val certificate = map["certificate"] as? String ?: return@mapNotNull null
+            CertificatePolicy(
+                certificate = certificate,
+                privateKey = map["privateKey"] as? String,
+                alias = map["alias"] as? String,
+            )
+        }
+    }
+
+    private fun parseOsUpdatePolicy(value: Any?): OsUpdatePolicySetting? {
+        val map = value as? Map<*, *> ?: return null
+        val type = map["type"] as? String ?: return null
+        return OsUpdatePolicySetting(
+            type = type,
+            windowStartMinutes = (map["windowStartMinutes"] as? Number)?.toInt(),
+            windowEndMinutes = (map["windowEndMinutes"] as? Number)?.toInt(),
+        )
+    }
+
+    private fun parseManagedConfigurations(value: Any?): Map<String, Map<String, Any?>> {
+        val map = value as? Map<*, *> ?: return emptyMap()
+        // { packageName -> { key -> value } }. A value that is not itself a map
+        // is not a managed configuration; skip it rather than crash the whole
+        // policy parse on one malformed entry.
+        return map.entries.mapNotNull { (pkg, config) ->
+            val packageName = pkg as? String ?: return@mapNotNull null
+            val configMap = config as? Map<*, *> ?: return@mapNotNull null
+            packageName to configMap.entries
+                .mapNotNull { (k, v) -> (k as? String)?.let { it to v } }
+                .toMap()
+        }.toMap()
     }
 
     @Suppress("UNCHECKED_CAST")
