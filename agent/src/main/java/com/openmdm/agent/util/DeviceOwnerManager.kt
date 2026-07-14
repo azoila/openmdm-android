@@ -188,7 +188,13 @@ class DeviceOwnerManager @Inject constructor(
             // Get current version info
             val currentVersionInfo = try {
                 val packageInfo = packageManager.getPackageInfo(params.packageName, 0)
-                Pair(packageInfo.versionName ?: "unknown", packageInfo.longVersionCode.toInt())
+                val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    packageInfo.longVersionCode.toInt()
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageInfo.versionCode
+                }
+                Pair(packageInfo.versionName ?: "unknown", versionCode)
             } catch (e: PackageManager.NameNotFoundException) {
                 Pair("0.0.0", 0)
             }
