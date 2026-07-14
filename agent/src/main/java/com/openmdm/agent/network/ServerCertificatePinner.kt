@@ -1,5 +1,6 @@
 package com.openmdm.agent.network
 
+import android.util.Log
 import com.openmdm.agent.BuildConfig
 import com.openmdm.agent.telemetry.AgentTelemetryHolder
 import okhttp3.CertificatePinner
@@ -53,10 +54,14 @@ import okhttp3.CertificatePinner
  *
  * The gradle build pushes both into `BuildConfig.MDM_SERVER_PIN`
  * and `BuildConfig.MDM_SERVER_HOST`. When either is empty, pinning
- * is **disabled** and the agent uses the system trust store — the
- * scaffolding is wired but the feature is off until a real pin is
- * provided. That's the only way a freshly-cloned dev build can
- * hit a local openmdm without certificate errors.
+ * is **disabled** and the agent uses the system trust store, so a
+ * freshly-cloned dev build can hit a local openmdm without
+ * certificate errors.
+ *
+ * **Release builds cannot be assembled unpinned**: the release build
+ * type in `agent/build.gradle.kts` fails if `-PmdmServerHost` and
+ * `-PmdmServerPin` are not supplied (override with
+ * `-PallowUnpinnedRelease=true` only for an emergency build).
  *
  * ## Rotation
  *
@@ -94,30 +99,40 @@ object ServerCertificatePinner {
      * the platform trust store.
      */
     fun fromBuildConfig(): CertificatePinner? {
-        val host = buildConfigString("MDM_SERVER_HOST").takeIf { it.isNotBlank() }
-            ?: run {
-                // Not an error — just not configured for this build.
-                // Dev builds against local dev servers skip pinning.
-                return null
-            }
-        val primaryPin = buildConfigString("MDM_SERVER_PIN").takeIf { it.isNotBlank() }
-            ?: run {
-                AgentTelemetryHolder.event(
-                    "tls_pinning_disabled",
-                    mapOf(
-                        "reason" to "no_primary_pin",
-                        "host" to host,
-                    ),
-                )
-                return null
-            }
-        val backupPin = buildConfigString("MDM_SERVER_PIN_BACKUP").takeIf { it.isNotBlank() }
+        val host = BuildConfig.MDM_SERVER_HOST.takeIf { it.isNotBlank() }
+        val primaryPin = BuildConfig.MDM_SERVER_PIN.takeIf { it.isNotBlank() }
+
+        if (host == null || primaryPin == null) {
+            // Release builds cannot reach this branch — the gradle release
+            // build type refuses to assemble without a host and a pin. So
+            // this is a debug build against a local server, which is a
+            // legitimate unpinned configuration. It is still logged loudly:
+            // an unpinned agent that performs pinned-key enrollment can have
+            // its identity captured by a first-enroll MITM.
+            Log.w(
+                TAG,
+                "TLS certificate pinning is DISABLED (host=${host ?: "unset"}, " +
+                    "pin=${if (primaryPin == null) "unset" else "set"}). " +
+                    "This is only safe for local development.",
+            )
+            AgentTelemetryHolder.event(
+                "tls_pinning_disabled",
+                mapOf(
+                    "reason" to if (host == null) "no_host" else "no_primary_pin",
+                    "host" to (host ?: ""),
+                ),
+            )
+            return null
+        }
+
+        val backupPin = BuildConfig.MDM_SERVER_PIN_BACKUP.takeIf { it.isNotBlank() }
 
         val builder = CertificatePinner.Builder().add(host, primaryPin)
         if (backupPin != null) {
             builder.add(host, backupPin)
         }
 
+        Log.i(TAG, "TLS certificate pinning enabled for $host (backup pin: ${backupPin != null})")
         AgentTelemetryHolder.event(
             "tls_pinning_enabled",
             mapOf(
@@ -128,34 +143,5 @@ object ServerCertificatePinner {
         return builder.build()
     }
 
-    /**
-     * Read a string field off `BuildConfig` reflectively so this
-     * file compiles even if the `build.gradle.kts` has not yet
-     * been updated to generate the `MDM_SERVER_PIN` /
-     * `MDM_SERVER_HOST` / `MDM_SERVER_PIN_BACKUP` build-time
-     * fields. Missing fields → empty string → no pin → scaffolding
-     * sits idle.
-     *
-     * Once the gradle changes land, this can be simplified to
-     * direct `BuildConfig.MDM_SERVER_PIN` accesses. Reflection is
-     * cheap here — it runs once at app boot when the OkHttpClient
-     * is constructed.
-     */
-    private fun buildConfigString(fieldName: String): String {
-        return try {
-            val clazz = BuildConfig::class.java
-            val field = clazz.getDeclaredField(fieldName)
-            field.isAccessible = true
-            field.get(null) as? String ?: ""
-        } catch (t: NoSuchFieldException) {
-            ""
-        } catch (t: Throwable) {
-            AgentTelemetryHolder.nonFatal(
-                t,
-                context = "tls_pinning_buildconfig_read",
-                extras = mapOf("field" to fieldName),
-            )
-            ""
-        }
-    }
+    private const val TAG = "ServerCertPinner"
 }
