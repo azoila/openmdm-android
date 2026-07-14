@@ -418,6 +418,11 @@ class MDMService : LifecycleService() {
                 val packageName = command.payload?.get("packageName") as? String
                 val url = command.payload?.get("url") as? String
                 val autoGrantPermissions = command.payload?.get("autoGrantPermissions") as? Boolean ?: true
+                // Server-supplied APK integrity hash. Accept either key: the
+                // core Application record exposes `sha256`, while the secure
+                // self-update path names it `expectedSha256`.
+                val expectedSha256 = (command.payload?.get("expectedSha256") as? String)
+                    ?: (command.payload?.get("sha256") as? String)
 
                 if (packageName != null && url != null) {
                     // Track this pending installation so we can complete the command later
@@ -425,7 +430,7 @@ class MDMService : LifecycleService() {
                         pendingInstalls[packageName] = Pair(command.id, token)
                     }
 
-                    val result = deviceOwnerManager.installApkSilently(url, packageName)
+                    val result = deviceOwnerManager.installApkSilently(url, packageName, expectedSha256)
                     if (result.isSuccess) {
                         // Installation is PENDING - actual result comes via InstallResultReceiver
                         CommandResult(true, "App installation pending for $packageName")
@@ -456,6 +461,8 @@ class MDMService : LifecycleService() {
                 // Update is same as install with newer version
                 val packageName = command.payload?.get("packageName") as? String
                 val url = command.payload?.get("url") as? String
+                val expectedSha256 = (command.payload?.get("expectedSha256") as? String)
+                    ?: (command.payload?.get("sha256") as? String)
 
                 if (packageName != null && url != null) {
                     // Track this pending update so we can complete the command later
@@ -463,7 +470,7 @@ class MDMService : LifecycleService() {
                         pendingInstalls[packageName] = Pair(command.id, token)
                     }
 
-                    val result = deviceOwnerManager.installApkSilently(url, packageName)
+                    val result = deviceOwnerManager.installApkSilently(url, packageName, expectedSha256)
                     if (result.isSuccess) {
                         CommandResult(true, "App update pending for $packageName")
                     } else {

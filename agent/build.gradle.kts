@@ -23,6 +23,24 @@ android {
         // Default to emulator localhost - override via gradle property: -PmdmServerUrl=https://your-server.com/mdm
         buildConfigField("String", "MDM_SERVER_URL", "\"${findProperty("mdmServerUrl") ?: "http://10.0.2.2:3000/mdm"}\"")
         buildConfigField("String", "DEVICE_SECRET", "\"${findProperty("deviceSecret") ?: "change-me-in-production"}\"")
+
+        // TLS certificate pinning. Empty by default so a freshly-cloned dev
+        // build can talk to a local server with a self-signed cert; when the
+        // host and a primary pin are both set, ServerCertificatePinner turns
+        // pinning on. Release builds MUST supply these — see the
+        // assembleRelease/bundleRelease guard at the bottom of this file.
+        //
+        //   ./gradlew :agent:assembleRelease \
+        //       -PmdmServerHost=mdm.example.com \
+        //       -PmdmServerPin="sha256/AbCd...=" \
+        //       -PmdmServerPinBackup="sha256/EfGh...="
+        buildConfigField("String", "MDM_SERVER_HOST", "\"${findProperty("mdmServerHost") ?: ""}\"")
+        buildConfigField("String", "MDM_SERVER_PIN", "\"${findProperty("mdmServerPin") ?: ""}\"")
+        buildConfigField(
+            "String",
+            "MDM_SERVER_PIN_BACKUP",
+            "\"${findProperty("mdmServerPinBackup") ?: ""}\""
+        )
     }
 
     buildTypes {
@@ -137,4 +155,45 @@ dependencies {
     androidTestImplementation(libs.mockk.android)
     androidTestImplementation(libs.truth)
     androidTestImplementation(libs.coroutines.test)
+}
+
+/**
+ * Refuse to produce a release artifact without TLS certificate pinning.
+ *
+ * Pinned-key enrollment is only as strong as the first-enroll connection: an
+ * unpinned MITM at enrollment lets an attacker capture the device's public key
+ * and own that device's identity permanently. Rather than silently shipping a
+ * release with pinning disabled, fail the build.
+ *
+ * Debug builds are unaffected — they routinely target a local server with a
+ * self-signed certificate.
+ *
+ * Emergency escape hatch (e.g. the pinned certificate expired before a backup
+ * pin shipped): -PallowUnpinnedRelease=true
+ */
+tasks.matching { task ->
+    task.name.startsWith("assembleRelease") || task.name.startsWith("bundleRelease")
+}.configureEach {
+    // Resolve the properties into plain locals at configuration time. A task
+    // action that reads `project` (or a script-level property) captures a
+    // Gradle script object reference, which the configuration cache cannot
+    // serialize — these Strings and Boolean can be.
+    val serverHost = providers.gradleProperty("mdmServerHost").orNull.orEmpty()
+    val serverPin = providers.gradleProperty("mdmServerPin").orNull.orEmpty()
+    val allowUnpinned = providers.gradleProperty("allowUnpinnedRelease").orNull == "true"
+
+    doFirst {
+        if (allowUnpinned) {
+            logger.warn(
+                "⚠️  Building an UNPINNED release (-PallowUnpinnedRelease=true). " +
+                    "The agent will trust the system store; first-enroll MITM is possible."
+            )
+        } else if (serverHost.isBlank() || serverPin.isBlank()) {
+            throw GradleException(
+                "Release builds require TLS certificate pinning. Pass -PmdmServerHost and " +
+                    "-PmdmServerPin (see ServerCertificatePinner for how to compute the pin), " +
+                    "or -PallowUnpinnedRelease=true to override for an emergency build."
+            )
+        }
+    }
 }

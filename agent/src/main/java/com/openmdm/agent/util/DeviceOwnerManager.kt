@@ -12,6 +12,7 @@ import android.os.PowerManager
 import android.os.UserManager
 import android.provider.Settings
 import com.openmdm.agent.receiver.MDMDeviceAdminReceiver
+import com.openmdm.agent.telemetry.AgentTelemetryHolder
 import com.openmdm.library.device.HardwareManager
 import com.openmdm.library.device.KioskManager
 import com.openmdm.library.device.LauncherManager
@@ -291,16 +292,67 @@ class DeviceOwnerManager @Inject constructor(
     }
 
     /**
-     * Install APK silently (requires Device Owner) - Legacy method, use installApkSecurely for production
+     * Install an APK silently (requires Device Owner).
+     *
+     * [expectedSha256] is the hex-encoded SHA-256 of the APK, as supplied by
+     * the server in the command payload. When present it is verified before
+     * the APK is handed to PackageInstaller, and a mismatch aborts the
+     * install. When absent, the APK is installed unverified: the integrity of
+     * the install then rests entirely on TLS, so a compromised or
+     * MITM'd download channel becomes arbitrary code execution as Device
+     * Owner. Servers should always send a hash; [requireHash] makes that
+     * mandatory and is the recommended configuration for production fleets.
      */
-    suspend fun installApkSilently(apkUrl: String, packageName: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun installApkSilently(
+        apkUrl: String,
+        packageName: String,
+        expectedSha256: String? = null,
+        requireHash: Boolean = false,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             if (!isDeviceOwner()) {
                 return@withContext Result.failure(SecurityException("Silent install requires Device Owner"))
             }
 
+            if (requireHash && expectedSha256.isNullOrBlank()) {
+                return@withContext Result.failure(
+                    SecurityException("Install rejected: command carried no expectedSha256")
+                )
+            }
+
             // Download APK
             val apkFile = downloadApk(apkUrl, packageName)
+
+            // Verify integrity before installing.
+            if (!expectedSha256.isNullOrBlank()) {
+                val actualHash = calculateSha256(apkFile)
+                if (!actualHash.equals(expectedSha256, ignoreCase = true)) {
+                    apkFile.delete()
+                    Log.e(TAG, "⛔ Hash mismatch for $packageName. Expected: $expectedSha256, got: $actualHash")
+                    AgentTelemetryHolder.event(
+                        "apk_hash_mismatch",
+                        mapOf(
+                            "package" to packageName,
+                            "expected" to expectedSha256,
+                            "actual" to actualHash,
+                        ),
+                    )
+                    return@withContext Result.failure(
+                        SecurityException("APK hash verification failed for $packageName")
+                    )
+                }
+                Log.i(TAG, "✅ Hash verified for $packageName: $actualHash")
+            } else {
+                Log.w(
+                    TAG,
+                    "⚠️ Installing $packageName WITHOUT hash verification - " +
+                        "the server sent no expectedSha256",
+                )
+                AgentTelemetryHolder.event(
+                    "apk_install_unverified",
+                    mapOf("package" to packageName),
+                )
+            }
 
             // Install using PackageInstaller
             val result = installWithPackageInstaller(apkFile, packageName)
