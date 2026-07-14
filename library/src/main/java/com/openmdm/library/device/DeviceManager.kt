@@ -11,6 +11,8 @@ import android.os.PowerManager
 import android.os.UserManager
 import android.provider.Settings
 import com.openmdm.library.file.FileDeploymentManager
+import com.openmdm.library.security.ApkIntegrity
+import com.openmdm.library.telemetry.MdmTelemetryHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -107,16 +109,60 @@ class DeviceManager private constructor(
     // App Installation
     // ============================================
 
+    /**
+     * Install an APK silently (requires Device Owner).
+     *
+     * [expectedSha256] is the hex-encoded SHA-256 of the APK, as supplied by the
+     * server. It is verified **before** the file is handed to PackageInstaller.
+     *
+     * When it is absent, the APK is installed unverified, and the integrity of
+     * the install rests entirely on TLS. A compromised or MITM'd download channel
+     * then becomes arbitrary code execution as Device Owner — which is why
+     * [requireHash] exists: set it and an install command that carries no hash is
+     * refused outright. Production fleets should.
+     */
     suspend fun installApkSilently(
         apkUrl: String,
         packageName: String,
-        resultReceiverClass: Class<*>? = null
+        resultReceiverClass: Class<*>? = null,
+        expectedSha256: String? = null,
+        requireHash: Boolean = false,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             require(isDeviceOwner()) { "Silent install requires Device Owner" }
 
+            if (requireHash && expectedSha256.isNullOrBlank()) {
+                throw SecurityException(
+                    "Install of $packageName rejected: no expectedSha256 was supplied " +
+                        "and requireHash is set",
+                )
+            }
+
             val apkFile = downloadApk(apkUrl, packageName)
             try {
+                if (!expectedSha256.isNullOrBlank()) {
+                    val actual = ApkIntegrity.sha256(apkFile)
+                    if (!actual.equals(expectedSha256, ignoreCase = true)) {
+                        MdmTelemetryHolder.event(
+                            "apk_hash_mismatch",
+                            mapOf(
+                                "package" to packageName,
+                                "expected" to expectedSha256,
+                                "actual" to actual,
+                            ),
+                        )
+                        throw SecurityException(
+                            "APK hash verification failed for $packageName " +
+                                "(expected $expectedSha256, got $actual)",
+                        )
+                    }
+                } else {
+                    MdmTelemetryHolder.event(
+                        "apk_install_unverified",
+                        mapOf("package" to packageName),
+                    )
+                }
+
                 installWithPackageInstaller(apkFile, packageName, resultReceiverClass)
             } finally {
                 apkFile.delete()

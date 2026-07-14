@@ -1,4 +1,4 @@
-package com.openmdm.agent.security
+package com.openmdm.library.security
 
 /**
  * Canonical message builder for Phase 2b device-pinned-key

@@ -1,9 +1,7 @@
-package com.openmdm.agent.network
+package com.openmdm.library.network
 
 import okhttp3.Interceptor
 import okhttp3.Response
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Stamps every outbound request with the agent wire-protocol version
@@ -49,8 +47,11 @@ import javax.inject.Singleton
  * The header value must stay in sync with `@openmdm/core`'s
  * `AGENT_PROTOCOL_V2` constant (current value: `"2"`).
  */
-@Singleton
-class ProtocolHeaderInterceptor @Inject constructor() : Interceptor {
+// Deliberately NOT annotated with @Inject/@Singleton. The library has no DI
+// graph of its own, and a javax.inject annotation on a published AAR is a
+// footgun for consumers who do not use Hilt. The agent binds it in its own
+// module; a library embedder just constructs it.
+class ProtocolHeaderInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()

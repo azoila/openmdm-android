@@ -1,11 +1,11 @@
-package com.openmdm.agent.data
+package com.openmdm.library.enrollment
 
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.openmdm.agent.telemetry.AgentTelemetryHolder
+import com.openmdm.library.telemetry.MdmTelemetryHolder
 
 /**
  * Secondary, write-through backup for enrollment state.
@@ -67,7 +67,7 @@ class EnrollmentBackupStore(context: Context) {
         )
     } catch (t: Throwable) {
         Log.e(TAG, "EnrollmentBackupStore init failed — running without backup", t)
-        AgentTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_init")
+        MdmTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_init")
         null
     }
 
@@ -92,7 +92,7 @@ class EnrollmentBackupStore(context: Context) {
                 .putLong(KEY_SAVED_AT, System.currentTimeMillis())
                 .apply()
         } catch (t: Throwable) {
-            AgentTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_save")
+            MdmTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_save")
         }
     }
 
@@ -106,7 +106,7 @@ class EnrollmentBackupStore(context: Context) {
                 .putLong(KEY_SAVED_AT, System.currentTimeMillis())
                 .apply()
         } catch (t: Throwable) {
-            AgentTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_update_token")
+            MdmTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_update_token")
         }
     }
 
@@ -129,7 +129,7 @@ class EnrollmentBackupStore(context: Context) {
                 savedAt = p.getLong(KEY_SAVED_AT, 0L),
             )
         } catch (t: Throwable) {
-            AgentTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_load")
+            MdmTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_load")
             null
         }
     }
@@ -140,7 +140,7 @@ class EnrollmentBackupStore(context: Context) {
         try {
             p.edit().clear().apply()
         } catch (t: Throwable) {
-            AgentTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_clear")
+            MdmTelemetryHolder.nonFatal(t, context = "enrollment_backup_store_clear")
         }
     }
 
