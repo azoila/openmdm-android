@@ -77,8 +77,6 @@ data class PolicySettings(
     // Network Configuration
     // ============================================
     val wifiNetworks: List<WifiNetworkConfig> = emptyList(),
-    val vpnConfig: VpnConfig? = null,
-    val proxyConfig: ProxyConfig? = null,
 
     // ============================================
     // Password Policy
@@ -189,32 +187,6 @@ data class EapConfig(
     val caCertificate: String? = null,
     val clientCertificate: String? = null,
     val clientKey: String? = null
-)
-
-/**
- * VPN configuration
- */
-data class VpnConfig(
-    val name: String,
-    val type: String, // PPTP, L2TP, IPSec, OpenVPN, WireGuard
-    val server: String,
-    val username: String? = null,
-    val password: String? = null,
-    val certificate: String? = null,
-    val mtu: Int? = null,
-    val dns: List<String> = emptyList()
-)
-
-/**
- * Proxy configuration
- */
-data class ProxyConfig(
-    val host: String,
-    val port: Int,
-    val excludeList: List<String> = emptyList(),
-    val pacUrl: String? = null,
-    val username: String? = null,
-    val password: String? = null
 )
 
 /**

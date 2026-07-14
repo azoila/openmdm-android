@@ -126,8 +126,6 @@ object PolicyMapper {
 
             // Network Configuration
             wifiNetworks = parseWifiNetworks(map["wifiNetworks"]),
-            vpnConfig = parseVpnConfig(map["vpnConfig"]),
-            proxyConfig = parseProxyConfig(map["proxyConfig"]),
 
             // Password Policy
             passwordQuality = map.getInt("passwordQuality"),
@@ -392,34 +390,6 @@ object PolicyMapper {
             caCertificate = map["caCertificate"] as? String,
             clientCertificate = map["clientCertificate"] as? String,
             clientKey = map["clientKey"] as? String
-        )
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun parseVpnConfig(value: Any?): VpnConfig? {
-        val map = value as? Map<String, Any?> ?: return null
-        return VpnConfig(
-            name = map["name"] as? String ?: return null,
-            type = map["type"] as? String ?: return null,
-            server = map["server"] as? String ?: return null,
-            username = map["username"] as? String,
-            password = map["password"] as? String,
-            certificate = map["certificate"] as? String,
-            mtu = (map["mtu"] as? Number)?.toInt(),
-            dns = (map["dns"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-        )
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun parseProxyConfig(value: Any?): ProxyConfig? {
-        val map = value as? Map<String, Any?> ?: return null
-        return ProxyConfig(
-            host = map["host"] as? String ?: return null,
-            port = (map["port"] as? Number)?.toInt() ?: return null,
-            excludeList = (map["excludeList"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-            pacUrl = map["pacUrl"] as? String,
-            username = map["username"] as? String,
-            password = map["password"] as? String
         )
     }
 
