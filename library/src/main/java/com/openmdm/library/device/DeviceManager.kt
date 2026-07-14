@@ -413,6 +413,9 @@ class DeviceManager private constructor(
     private var _networkManager: NetworkManager? = null
     private var _fileDeploymentManager: FileDeploymentManager? = null
     private var _launcherManager: LauncherManager? = null
+    private var _managedConfigurationManager: ManagedConfigurationManager? = null
+    private var _systemUpdateManager: SystemUpdateManager? = null
+    private var _certificateManager: CertificateManager? = null
 
     /**
      * Get HardwareManager for WiFi, Bluetooth, GPS, USB control
@@ -479,6 +482,118 @@ class DeviceManager private constructor(
         return _launcherManager ?: LauncherManager.create(context, adminComponent).also {
             _launcherManager = it
         }
+    }
+
+    /** Managed configurations (app restrictions) — the Android Enterprise way to configure a third-party app. */
+    fun getManagedConfigurationManager(): ManagedConfigurationManager {
+        return _managedConfigurationManager
+            ?: ManagedConfigurationManager.create(context, adminComponent).also {
+                _managedConfigurationManager = it
+            }
+    }
+
+    /** OS update control — so a kiosk does not reboot mid-transaction. */
+    fun getSystemUpdateManager(): SystemUpdateManager {
+        return _systemUpdateManager ?: SystemUpdateManager.create(context, adminComponent).also {
+            _systemUpdateManager = it
+        }
+    }
+
+    /** CA and client certificate install — what enterprise Wi-Fi and private PKI need. */
+    fun getCertificateManager(): CertificateManager {
+        return _certificateManager ?: CertificateManager.create(context, adminComponent).also {
+            _certificateManager = it
+        }
+    }
+
+    // ============================================
+    // Password Policy
+    // ============================================
+
+    /**
+     * Apply the full password policy.
+     *
+     * `PolicySettings` has declared expiration, history, complexity minimums and a
+     * failed-attempt limit all along, and only quality and minimum length were
+     * ever applied. The rest were parsed, typed, and dropped — so an operator
+     * could set "passwords expire every 90 days", see it saved, and manage a fleet
+     * whose passwords never expired.
+     *
+     * Each rule is applied independently: one the platform rejects (an OEM that
+     * does not support it, a value out of range) must not silently take the others
+     * down with it.
+     */
+    fun applyPasswordPolicy(
+        quality: Int? = null,
+        minimumLength: Int? = null,
+        minimumLetters: Int? = null,
+        minimumNumeric: Int? = null,
+        minimumSymbols: Int? = null,
+        minimumUpperCase: Int? = null,
+        minimumLowerCase: Int? = null,
+        expirationDays: Int? = null,
+        historyLength: Int? = null,
+        maximumFailedAttempts: Int? = null,
+    ): Map<String, Throwable> {
+        val failures = mutableMapOf<String, Throwable>()
+
+        fun apply(name: String, block: () -> Unit) {
+            runCatching(block).onFailure { failures[name] = it }
+        }
+
+        quality?.let { apply("quality") { devicePolicyManager.setPasswordQuality(adminComponent, it) } }
+        minimumLength?.let {
+            apply("minimumLength") {
+                devicePolicyManager.setPasswordMinimumLength(adminComponent, it)
+            }
+        }
+        minimumLetters?.let {
+            apply("minimumLetters") {
+                devicePolicyManager.setPasswordMinimumLetters(adminComponent, it)
+            }
+        }
+        minimumNumeric?.let {
+            apply("minimumNumeric") {
+                devicePolicyManager.setPasswordMinimumNumeric(adminComponent, it)
+            }
+        }
+        minimumSymbols?.let {
+            apply("minimumSymbols") {
+                devicePolicyManager.setPasswordMinimumSymbols(adminComponent, it)
+            }
+        }
+        minimumUpperCase?.let {
+            apply("minimumUpperCase") {
+                devicePolicyManager.setPasswordMinimumUpperCase(adminComponent, it)
+            }
+        }
+        minimumLowerCase?.let {
+            apply("minimumLowerCase") {
+                devicePolicyManager.setPasswordMinimumLowerCase(adminComponent, it)
+            }
+        }
+        expirationDays?.let {
+            apply("expirationDays") {
+                // The platform takes milliseconds; 0 means "never expires".
+                val millis = if (it <= 0) 0L else it * 24L * 60L * 60L * 1000L
+                devicePolicyManager.setPasswordExpirationTimeout(adminComponent, millis)
+            }
+        }
+        historyLength?.let {
+            apply("historyLength") {
+                devicePolicyManager.setPasswordHistoryLength(adminComponent, it)
+            }
+        }
+        maximumFailedAttempts?.let {
+            apply("maximumFailedAttempts") {
+                // NOTE: on a Device Owner this WIPES THE DEVICE when exceeded.
+                // Passing 0 disables it, which is the safe default and why this
+                // is only applied when the policy explicitly asks for it.
+                devicePolicyManager.setMaximumFailedPasswordsForWipe(adminComponent, it)
+            }
+        }
+
+        return failures
     }
 
     // ============================================
@@ -571,5 +686,8 @@ class DeviceManager private constructor(
         _networkManager = null
         _fileDeploymentManager = null
         _launcherManager = null
+        _managedConfigurationManager = null
+        _systemUpdateManager = null
+        _certificateManager = null
     }
 }

@@ -5,7 +5,10 @@ import com.openmdm.agent.receiver.MDMDeviceAdminReceiver
 import com.openmdm.library.device.DeviceManager
 import com.openmdm.library.device.HardwareManager
 import com.openmdm.library.device.KioskManager
+import com.openmdm.library.device.CertificateManager
 import com.openmdm.library.device.LauncherManager
+import com.openmdm.library.device.ManagedConfigurationManager
+import com.openmdm.library.device.SystemUpdateManager
 import com.openmdm.library.device.NetworkManager
 import com.openmdm.library.device.RestrictionManager
 import com.openmdm.library.device.ScreenManager
@@ -165,6 +168,21 @@ class DeviceOwnerManager @Inject constructor(
     fun setPasswordMinimumLength(length: Int): Result<Unit> =
         delegate.setPasswordMinimumLength(length)
 
+    /** Apply the full password policy from a PolicySettings. Returns per-rule failures. */
+    fun applyPasswordPolicy(settings: com.openmdm.library.policy.PolicySettings): Map<String, Throwable> =
+        delegate.applyPasswordPolicy(
+            quality = settings.passwordQuality,
+            minimumLength = settings.passwordMinLength,
+            minimumLetters = settings.passwordMinLetters,
+            minimumNumeric = settings.passwordMinNumeric,
+            minimumSymbols = settings.passwordMinSymbols,
+            minimumUpperCase = settings.passwordMinUpperCase,
+            minimumLowerCase = settings.passwordMinLowerCase,
+            expirationDays = settings.passwordExpirationDays,
+            historyLength = settings.passwordHistoryLength,
+            maximumFailedAttempts = settings.maxFailedPasswordAttempts,
+        )
+
     // ----- Sub-managers -----
 
     fun getHardwareManager(): HardwareManager = delegate.getHardwareManager()
@@ -180,6 +198,13 @@ class DeviceOwnerManager @Inject constructor(
     fun getFileDeploymentManager(): FileDeploymentManager = delegate.getFileDeploymentManager()
 
     fun getLauncherManager(): LauncherManager = delegate.getLauncherManager()
+
+    fun getManagedConfigurationManager(): ManagedConfigurationManager =
+        delegate.getManagedConfigurationManager()
+
+    fun getSystemUpdateManager(): SystemUpdateManager = delegate.getSystemUpdateManager()
+
+    fun getCertificateManager(): CertificateManager = delegate.getCertificateManager()
 
     fun destroy() = delegate.destroy()
 }

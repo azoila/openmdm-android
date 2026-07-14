@@ -21,6 +21,7 @@ import com.openmdm.agent.util.DeviceOwnerManager
 import com.openmdm.library.command.CommandType
 import com.openmdm.library.file.FileDeployment
 import com.openmdm.library.device.SecureUpdateParams
+import com.openmdm.library.policy.toOsUpdatePolicy
 import com.openmdm.library.device.VisibilityMode
 import com.openmdm.library.policy.KioskConfig
 import com.openmdm.library.policy.LauncherConfig
@@ -1214,6 +1215,60 @@ class MDMService : LifecycleService() {
                 }
                 if (settings.disallowCamera) {
                     deviceOwnerManager.setCameraDisabled(true)
+                }
+
+                // Apply the password policy.
+                //
+                // PolicySettings has declared expiration, history, complexity
+                // minimums and a failed-attempt limit all along, and only quality
+                // and minimum length were ever applied. The rest were parsed,
+                // typed, and dropped — so an operator could set "passwords expire
+                // every 90 days", watch it save, and manage a fleet whose passwords
+                // never expired.
+                val passwordFailures = deviceOwnerManager.applyPasswordPolicy(settings)
+                if (passwordFailures.isNotEmpty()) {
+                    // One rule an OEM rejects must not silently take the rest down
+                    // with it, but it must be visible.
+                    Log.w(TAG, "Password policy partially applied; failed: ${passwordFailures.keys}")
+                }
+
+                // Install certificates the policy carries.
+                //
+                // EapConfig has always declared caCertificate / clientCertificate /
+                // clientKey, and NetworkManager only ever applied identity and
+                // anonymousIdentity — so a WPA2-Enterprise network needing a client
+                // certificate simply could not be joined, and an EAP network with no
+                // CA pinned validated against nothing.
+                settings.certificates.forEach { cert ->
+                    val certManager = deviceOwnerManager.getCertificateManager()
+                    val alias = cert.alias
+                    val privateKey = cert.privateKey
+                    val result = if (privateKey != null && alias != null) {
+                        certManager.installClientCertificate(
+                            alias = alias,
+                            certificatePem = cert.certificate,
+                            privateKeyPem = privateKey,
+                        )
+                    } else {
+                        certManager.installCaCertificate(cert.certificate)
+                    }
+                    result.onFailure { Log.w(TAG, "Certificate install failed", it) }
+                }
+
+                // Apply the OS update policy, so a kiosk does not reboot
+                // mid-transaction because Google shipped a patch.
+                settings.osUpdatePolicy?.let { policy ->
+                    deviceOwnerManager.getSystemUpdateManager()
+                        .setPolicy(policy.toOsUpdatePolicy())
+                        .onFailure { Log.w(TAG, "OS update policy failed", it) }
+                }
+
+                // Push managed configurations to third-party apps. This is how
+                // Android Enterprise configures an app that knows nothing about MDM.
+                settings.managedConfigurations.forEach { (packageName, config) ->
+                    deviceOwnerManager.getManagedConfigurationManager()
+                        .setConfiguration(packageName, config)
+                        .onFailure { Log.w(TAG, "Managed config failed for $packageName", it) }
                 }
 
                 // Apply WiFi networks

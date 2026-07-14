@@ -140,6 +140,16 @@ data class PolicySettings(
     val locationInterval: Int = 300, // seconds
 
     // ============================================
+    // Enterprise (AMAPI)
+    // ============================================
+    /** Certificates to install: a CA, or a client cert with its key + alias. */
+    val certificates: List<CertificatePolicy> = emptyList(),
+    /** When OS updates may install. Null leaves the platform default. */
+    val osUpdatePolicy: OsUpdatePolicySetting? = null,
+    /** Managed configurations to push to third-party apps, keyed by package. */
+    val managedConfigurations: Map<String, Map<String, Any?>> = emptyMap(),
+
+    // ============================================
     // Custom Settings
     // ============================================
     val customSettings: Map<String, Any?> = emptyMap()
@@ -352,3 +362,25 @@ data class LauncherConfig(
         }
     }
 }
+
+/**
+ * A certificate to install on the device.
+ *
+ * When [privateKey] and [alias] are set, it is a *client* certificate installed
+ * under that alias (EAP-TLS, mutual TLS). Otherwise it is a CA certificate added
+ * to the managed trust store.
+ */
+data class CertificatePolicy(
+    val certificate: String,
+    val privateKey: String? = null,
+    val alias: String? = null,
+)
+
+/** Serializable form of the OS update policy. Maps to the library's OsUpdatePolicy. */
+data class OsUpdatePolicySetting(
+    /** "automatic", "windowed", or "postpone". */
+    val type: String,
+    /** For "windowed": minutes from midnight. */
+    val windowStartMinutes: Int? = null,
+    val windowEndMinutes: Int? = null,
+)
