@@ -20,6 +20,7 @@ import com.openmdm.agent.util.DeviceInfoCollector
 import com.openmdm.agent.util.DeviceOwnerManager
 import com.openmdm.library.command.CommandType
 import com.openmdm.library.file.FileDeployment
+import com.openmdm.library.device.SecureUpdateParams
 import com.openmdm.library.device.VisibilityMode
 import com.openmdm.library.policy.KioskConfig
 import com.openmdm.library.policy.LauncherConfig
@@ -494,7 +495,7 @@ class MDMService : LifecycleService() {
                 val minPreviousVersion = command.payload?.get("minPreviousVersion") as? String
 
                 if (url != null && sha256 != null && version != null && versionCode != null) {
-                    val params = DeviceOwnerManager.SecureUpdateParams(
+                    val params = SecureUpdateParams(
                         apkUrl = url,
                         packageName = packageName, // agent's own package
                         expectedSha256 = sha256,

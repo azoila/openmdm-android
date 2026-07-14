@@ -412,6 +412,7 @@ class DeviceManager private constructor(
     private var _restrictionManager: RestrictionManager? = null
     private var _networkManager: NetworkManager? = null
     private var _fileDeploymentManager: FileDeploymentManager? = null
+    private var _launcherManager: LauncherManager? = null
 
     /**
      * Get HardwareManager for WiFi, Bluetooth, GPS, USB control
@@ -468,6 +469,97 @@ class DeviceManager private constructor(
     }
 
     /**
+     * Get LauncherManager for kiosk/home-screen control.
+     *
+     * The library shipped a LauncherManager and no way to reach it from
+     * DeviceManager — the agent had its own accessor, so an embedder could not
+     * get at a manager the library itself provides.
+     */
+    fun getLauncherManager(): LauncherManager {
+        return _launcherManager ?: LauncherManager.create(context, adminComponent).also {
+            _launcherManager = it
+        }
+    }
+
+    // ============================================
+    // Secure Update
+    // ============================================
+
+    /**
+     * Install an APK with the checks a production update needs:
+     * SHA-256 verification, downgrade protection, a minimum-previous-version
+     * gate, and — for a self-update — a state backup taken before the process
+     * replaces itself.
+     *
+     * [installApkSilently] is the plain path. This is the one to use when the
+     * APK is an upgrade to something already installed, and especially when it
+     * is *this* app.
+     */
+    suspend fun installApkSecurely(
+        params: SecureUpdateParams,
+        resultReceiverClass: Class<*>? = null,
+    ): UpdateResult = withContext(Dispatchers.IO) {
+        if (!isDeviceOwner()) {
+            return@withContext UpdateResult(
+                success = false,
+                message = "Silent install requires Device Owner",
+                error = "DEVICE_OWNER_REQUIRED",
+            )
+        }
+
+        val (currentVersion, currentVersionCode) =
+            SecureUpdate.installedVersion(context.packageManager, params.packageName)
+
+        SecureUpdate.rejectionReason(params, currentVersion, currentVersionCode)?.let {
+            return@withContext it
+        }
+
+        // The process is about to be replaced. If the new build cannot read the
+        // old state, the device comes back up as a factory-fresh agent that has
+        // forgotten it was ever enrolled.
+        if (params.isSelfUpdate) {
+            SecureUpdate.backupAppState(context)
+        }
+
+        try {
+            val apkFile = downloadApk(params.apkUrl, params.packageName)
+            try {
+                if (!SecureUpdate.verify(apkFile, params.expectedSha256)) {
+                    return@withContext UpdateResult(
+                        success = false,
+                        message = "APK hash verification failed for ${params.packageName}",
+                        fromVersion = currentVersion,
+                        toVersion = params.targetVersion,
+                        error = "HASH_MISMATCH",
+                    )
+                }
+
+                installWithPackageInstaller(apkFile, params.packageName, resultReceiverClass)
+
+                UpdateResult(
+                    success = true,
+                    message = "Update initiated",
+                    fromVersion = currentVersion,
+                    toVersion = params.targetVersion,
+                )
+            } finally {
+                apkFile.delete()
+            }
+        } catch (t: Throwable) {
+            UpdateResult(
+                success = false,
+                message = t.message ?: "Update failed",
+                fromVersion = currentVersion,
+                toVersion = params.targetVersion,
+                error = "EXCEPTION",
+            )
+        }
+    }
+
+    /** Restore state saved before a self-update. Call on first boot after one. */
+    fun restoreAppState() = SecureUpdate.restoreAppState(context)
+
+    /**
      * Clean up manager resources
      */
     fun destroy() {
@@ -478,5 +570,6 @@ class DeviceManager private constructor(
         _restrictionManager = null
         _networkManager = null
         _fileDeploymentManager = null
+        _launcherManager = null
     }
 }
