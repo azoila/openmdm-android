@@ -3,7 +3,7 @@
 [![JitPack](https://jitpack.io/v/azoila/openmdm-android.svg)](https://jitpack.io/#azoila/openmdm-android)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Official Android components for [OpenMDM](https://github.com/openmdm/openmdm) - the embeddable Mobile Device Management SDK.
+Official Android components for [OpenMDM](https://github.com/azoila/openmdm) - the embeddable Mobile Device Management SDK.
 
 > [!CAUTION]
 > **This project is under active development and is NOT ready for production use.**
@@ -71,11 +71,11 @@ allprojects {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.azoila.openmdm-android:library:0.1.0")
+    implementation("com.github.azoila.openmdm-android:library:0.2.0")
 }
 ```
 
-> **Note**: Replace `0.1.0` with the latest release version or use `main-SNAPSHOT` for the latest development version.
+> **Note**: Replace `0.2.0` with the latest release version or use `main-SNAPSHOT` for the latest development version.
 
 ## Library Usage
 
@@ -300,7 +300,7 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 
 ## Protocol Compatibility
 
-This Android agent is designed to work with [OpenMDM Server](https://github.com/openmdm/openmdm) v0.2.0+.
+This Android agent is designed to work with [OpenMDM Server](https://github.com/azoila/openmdm) v0.2.0+.
 
 The API protocol is defined in the `@openmdm/client` TypeScript package. Keep the Kotlin models in sync when updating.
 
@@ -313,7 +313,7 @@ The library module is published via [JitPack](https://jitpack.io/#azoila/openmdm
 Releases are automatically available on JitPack when a GitHub release is created:
 
 ```kotlin
-implementation("com.github.azoila.openmdm-android:library:0.1.0")
+implementation("com.github.azoila.openmdm-android:library:0.2.0")
 ```
 
 ### Using a Specific Commit
@@ -340,7 +340,7 @@ Check the JitPack build status at: https://jitpack.io/#azoila/openmdm-android
 
 ## Contributing
 
-Contributions welcome! Please read the [Contributing Guide](https://github.com/openmdm/openmdm/blob/main/CONTRIBUTING.md).
+Contributions welcome! Please read the [Contributing Guide](CONTRIBUTING.md).
 
 ## License
 
