@@ -756,4 +756,135 @@ class PolicyMapperTest {
         // Should filter out empty strings
         assertThat(result.restrictions).containsExactly("no_install_apps", "no_factory_reset")
     }
+
+    // ============================================
+    // Enterprise (AMAPI) fields
+    // ============================================
+    //
+    // These three fields shipped as declared-but-unparsed for one release:
+    // enforcement landed in the AMAPI PR, but fromMap dropped them, so a policy
+    // that carried them over the wire arrived at the enforcer empty. The
+    // round-trip tests below are the contract that keeps wire -> typed -> wire
+    // honest.
+
+    @Test
+    fun `parses a CA certificate`() {
+        val result = PolicyMapper.fromMap(
+            mapOf("certificates" to listOf(mapOf("certificate" to "-----BEGIN CERTIFICATE-----"))),
+        )
+
+        assertThat(result.certificates).hasSize(1)
+        assertThat(result.certificates[0].certificate).isEqualTo("-----BEGIN CERTIFICATE-----")
+        assertThat(result.certificates[0].alias).isNull()
+    }
+
+    @Test
+    fun `parses a client certificate with key and alias`() {
+        val result = PolicyMapper.fromMap(
+            mapOf(
+                "certificates" to listOf(
+                    mapOf("certificate" to "cert", "privateKey" to "key", "alias" to "wifi"),
+                ),
+            ),
+        )
+
+        val cert = result.certificates.single()
+        assertThat(cert.privateKey).isEqualTo("key")
+        assertThat(cert.alias).isEqualTo("wifi")
+    }
+
+    @Test
+    fun `drops a certificate row with no certificate`() {
+        // A row with no cert is meaningless; carrying it would be an empty policy
+        // that looks configured.
+        val result = PolicyMapper.fromMap(
+            mapOf("certificates" to listOf(mapOf("alias" to "orphan"))),
+        )
+
+        assertThat(result.certificates).isEmpty()
+    }
+
+    @Test
+    fun `parses a windowed OS update policy`() {
+        val result = PolicyMapper.fromMap(
+            mapOf(
+                "osUpdatePolicy" to mapOf(
+                    "type" to "windowed",
+                    "windowStartMinutes" to 120,
+                    "windowEndMinutes" to 300,
+                ),
+            ),
+        )
+
+        assertThat(result.osUpdatePolicy?.type).isEqualTo("windowed")
+        assertThat(result.osUpdatePolicy?.windowStartMinutes).isEqualTo(120)
+        assertThat(result.osUpdatePolicy?.windowEndMinutes).isEqualTo(300)
+    }
+
+    @Test
+    fun `an OS update policy with no type is dropped`() {
+        val result = PolicyMapper.fromMap(mapOf("osUpdatePolicy" to mapOf("windowStartMinutes" to 60)))
+
+        assertThat(result.osUpdatePolicy).isNull()
+    }
+
+    @Test
+    fun `parses managed configurations keyed by package`() {
+        val result = PolicyMapper.fromMap(
+            mapOf(
+                "managedConfigurations" to mapOf(
+                    "com.example.player" to mapOf("server_url" to "https://cdn", "kiosk" to true),
+                ),
+            ),
+        )
+
+        val config = result.managedConfigurations["com.example.player"]
+        assertThat(config).isNotNull()
+        assertThat(config!!["server_url"]).isEqualTo("https://cdn")
+        assertThat(config["kiosk"]).isEqualTo(true)
+    }
+
+    @Test
+    fun `skips a managed configuration entry that is not a map`() {
+        // One malformed entry must not crash the whole policy parse.
+        val result = PolicyMapper.fromMap(
+            mapOf(
+                "managedConfigurations" to mapOf(
+                    "com.good" to mapOf("k" to "v"),
+                    "com.bad" to "not-a-map",
+                ),
+            ),
+        )
+
+        assertThat(result.managedConfigurations.keys).containsExactly("com.good")
+    }
+
+    @Test
+    fun `round-trips the AMAPI fields through toMap and back`() {
+        val original = PolicySettings(
+            certificates = listOf(
+                CertificatePolicy(certificate = "ca-cert"),
+                CertificatePolicy(certificate = "client", privateKey = "key", alias = "eap"),
+            ),
+            osUpdatePolicy = OsUpdatePolicySetting("windowed", 120, 300),
+            managedConfigurations = mapOf(
+                "com.example.app" to mapOf("url" to "https://x", "flag" to true),
+            ),
+        )
+
+        val recovered = PolicyMapper.fromMap(PolicyMapper.toMap(original))
+
+        assertThat(recovered.certificates).isEqualTo(original.certificates)
+        assertThat(recovered.osUpdatePolicy).isEqualTo(original.osUpdatePolicy)
+        assertThat(recovered.managedConfigurations).isEqualTo(original.managedConfigurations)
+    }
+
+    @Test
+    fun `absent AMAPI fields default to empty, not null lists`() {
+        val result = PolicyMapper.fromMap(emptyMap())
+
+        assertThat(result.certificates).isEmpty()
+        assertThat(result.osUpdatePolicy).isNull()
+        assertThat(result.managedConfigurations).isEmpty()
+    }
 }
