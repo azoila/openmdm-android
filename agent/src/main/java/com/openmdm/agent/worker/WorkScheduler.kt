@@ -22,6 +22,43 @@ class WorkScheduler @Inject constructor(
     companion object {
         private const val TAG = "OpenMDM.WorkScheduler"
 
+        private const val ENROLLMENT_BACKOFF_SECONDS = 30L
+
+        /**
+         * Enqueue post-provisioning enrollment.
+         *
+         * Static, and takes a raw Context, because the only caller is
+         * [com.openmdm.agent.receiver.MDMDeviceAdminReceiver] — a DeviceAdminReceiver
+         * cannot be Hilt-injected, so it has no WorkScheduler to reach for.
+         *
+         * KEEP is deliberate: provisioning can complete more than once (a retry, a
+         * re-provision), and each completion must not queue another enrollment on
+         * top of one already in flight.
+         */
+        fun enqueueProvisioningEnrollment(context: android.content.Context) {
+            Log.i(TAG, "Enqueuing post-provisioning enrollment")
+
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+
+            val request = OneTimeWorkRequestBuilder<EnrollmentWorker>()
+                .setConstraints(constraints)
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    ENROLLMENT_BACKOFF_SECONDS,
+                    java.util.concurrent.TimeUnit.SECONDS,
+                )
+                .addTag(EnrollmentWorker.WORK_NAME)
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                EnrollmentWorker.WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                request,
+            )
+        }
+
         // Default intervals
         const val DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 15L // WorkManager minimum is 15 minutes
         const val MIN_HEARTBEAT_INTERVAL_MINUTES = 15L

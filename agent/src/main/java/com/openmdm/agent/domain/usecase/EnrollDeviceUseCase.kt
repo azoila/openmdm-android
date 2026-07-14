@@ -5,6 +5,7 @@ import com.google.gson.Gson
 import com.openmdm.agent.BuildConfig
 import com.openmdm.agent.data.EnrollmentRequest
 import com.openmdm.agent.data.MDMApi
+import com.openmdm.agent.di.ServerUrl
 import com.openmdm.agent.data.MDMRepository
 import com.openmdm.agent.domain.repository.IEnrollmentRepository
 import com.openmdm.library.security.CanonicalEnrollmentMessage
@@ -71,12 +72,14 @@ class EnrollDeviceUseCase @Inject constructor(
     private val deviceInfoCollector: DeviceInfoCollector,
     private val signatureGenerator: SignatureGenerator,
     private val deviceIdentity: DeviceIdentity,
+    @ServerUrl private val serverUrl: String,
 ) {
     private val gson = Gson()
 
     /**
      * Enroll the device with the given device code.
-     * Server URL is taken from `BuildConfig.MDM_SERVER_URL`.
+     * The server URL is whatever provisioning supplied, falling back to
+     * `BuildConfig.MDM_SERVER_URL` — see AppModule.provideServerUrl.
      *
      * @param deviceCode The enrollment code provided by the administrator
      * @return Result indicating success or failure with error message
@@ -107,7 +110,7 @@ class EnrollDeviceUseCase @Inject constructor(
                         enrollmentId = deviceCode,
                         token = body.token,
                         refreshToken = body.refreshToken,
-                        serverUrl = BuildConfig.MDM_SERVER_URL,
+                        serverUrl = serverUrl,
                         policyVersion = body.policy?.version
                     )
 
