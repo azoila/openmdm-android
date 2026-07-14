@@ -103,8 +103,49 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
                 <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
                 <action android:name="android.app.action.DEVICE_ADMIN_DISABLE_REQUESTED" />
+                <!--
+                  Fires once the platform has made us Device Owner during QR / NFC /
+                  afw# / zero-touch provisioning, carrying the admin extras bundle.
+                  Without it, a provisioned device becomes Device Owner and then never
+                  learns which server it belongs to.
+                -->
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
             </intent-filter>
         </receiver>
+
+        <!--
+          Managed provisioning activities.
+
+          Both are MANDATORY on API 31+: during provisioning the setup wizard
+          launches GET_PROVISIONING_MODE to ask what kind of management we want, and
+          ADMIN_POLICY_COMPLIANCE to let us finish. A DPC that declares neither has
+          its provisioning aborted by the platform — which is why QR and zero-touch
+          enrollment could not work at all before these existed, despite the agent
+          shipping a complete QR parser.
+
+          BIND_DEVICE_ADMIN ensures only the system can launch them.
+        -->
+        <activity
+            android:name=".provisioning.ProvisioningModeActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".provisioning.PolicyComplianceActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <!-- Boot Receiver -->
         <receiver

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import androidx.work.WorkManager
 import com.openmdm.agent.BuildConfig
+import com.openmdm.agent.data.ProvisioningStore
+import com.openmdm.agent.di.ServerUrl
 import com.openmdm.agent.data.MDMApi
 import com.openmdm.agent.data.MDMRepository
 import com.openmdm.agent.data.local.MDMDatabase
@@ -92,13 +94,36 @@ object AppModule {
         @ApplicationContext context: Context,
     ): DeviceIdentity = AndroidKeystoreDeviceIdentity(context)
 
+    /**
+     * The server this device actually talks to.
+     *
+     * A device provisioned by QR / NFC / `afw#` / zero-touch is told its server in
+     * the admin extras bundle, and that is the **only** channel through which it
+     * learns it. `BuildConfig.MDM_SERVER_URL` is a build-time default — right for
+     * a fleet that forks and rebuilds the agent, useless for one that provisions a
+     * stock APK against its own server.
+     *
+     * So provisioning wins, and the build-time value is the fallback. This is the
+     * one place that decision needs to be made: everything downstream (Retrofit,
+     * the enrollment use case) reads through here.
+     */
     @Provides
     @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+    @ServerUrl
+    fun provideServerUrl(@ApplicationContext context: Context): String {
+        val provisioned = ProvisioningStore(context).serverUrl
+        val effective = provisioned ?: BuildConfig.MDM_SERVER_URL
+        return if (effective.endsWith("/")) effective else "$effective/"
+    }
+
+    @Provides
+    @Singleton
+    fun provideRetrofit(
+        okHttpClient: OkHttpClient,
+        @ServerUrl serverUrl: String,
+    ): Retrofit {
         return Retrofit.Builder()
-            .baseUrl(BuildConfig.MDM_SERVER_URL.let {
-                if (it.endsWith("/")) it else "$it/"
-            })
+            .baseUrl(serverUrl)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
