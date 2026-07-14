@@ -1,4 +1,4 @@
-package com.openmdm.agent.security
+package com.openmdm.library.security
 
 import com.google.common.truth.Truth.assertThat
 import java.security.KeyPairGenerator

@@ -1,4 +1,4 @@
-package com.openmdm.agent.security
+package com.openmdm.library.security
 
 import android.content.Context
 import android.content.pm.PackageManager
@@ -7,7 +7,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import com.openmdm.agent.telemetry.AgentTelemetryHolder
+import com.openmdm.library.telemetry.MdmTelemetryHolder
 import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -203,7 +203,7 @@ class AndroidKeystoreDeviceIdentity(
             val err = DeviceIdentityException(
                 "Failed to obtain EC key generator from AndroidKeyStore", t,
             )
-            AgentTelemetryHolder.nonFatal(err, context = "device_identity_generator_init")
+            MdmTelemetryHolder.nonFatal(err, context = "device_identity_generator_init")
             throw err
         }
 
@@ -231,7 +231,7 @@ class AndroidKeystoreDeviceIdentity(
             // up, so cheap devices that claim support but actually
             // can't deliver it don't block enrollment entirely.
             if (strongBoxRequested) {
-                AgentTelemetryHolder.nonFatal(
+                MdmTelemetryHolder.nonFatal(
                     strongBoxFailure,
                     context = "device_identity_strongbox_fallback",
                 )
@@ -250,7 +250,7 @@ class AndroidKeystoreDeviceIdentity(
                     val err = DeviceIdentityException(
                         "Keystore keypair generation failed (both StrongBox and TEE)", t,
                     )
-                    AgentTelemetryHolder.nonFatal(
+                    MdmTelemetryHolder.nonFatal(
                         err, context = "device_identity_keygen_failed",
                     )
                     throw err
@@ -259,7 +259,7 @@ class AndroidKeystoreDeviceIdentity(
                 val err = DeviceIdentityException(
                     "Keystore keypair generation failed", strongBoxFailure,
                 )
-                AgentTelemetryHolder.nonFatal(
+                MdmTelemetryHolder.nonFatal(
                     err, context = "device_identity_keygen_failed",
                 )
                 throw err
@@ -267,7 +267,7 @@ class AndroidKeystoreDeviceIdentity(
         }
 
         val info = describe(keystore)
-        AgentTelemetryHolder.event(
+        MdmTelemetryHolder.event(
             "device_identity_keypair_generated",
             mapOf(
                 "security_level" to info.securityLevel,
@@ -303,7 +303,7 @@ class AndroidKeystoreDeviceIdentity(
             Base64.encodeToString(signer.sign(), Base64.NO_WRAP)
         } catch (t: Throwable) {
             val err = DeviceIdentityException("Keystore signing failed", t)
-            AgentTelemetryHolder.nonFatal(err, context = "device_identity_sign_failed")
+            MdmTelemetryHolder.nonFatal(err, context = "device_identity_sign_failed")
             throw err
         }
     }
@@ -313,13 +313,13 @@ class AndroidKeystoreDeviceIdentity(
             val keystore = loadKeystore()
             if (keystore.containsAlias(alias)) {
                 keystore.deleteEntry(alias)
-                AgentTelemetryHolder.event(
+                MdmTelemetryHolder.event(
                     "device_identity_keypair_deleted",
                     mapOf("caller_stack" to Throwable().stackTraceToString().take(400)),
                 )
             }
         } catch (t: Throwable) {
-            AgentTelemetryHolder.nonFatal(t, context = "device_identity_delete_failed")
+            MdmTelemetryHolder.nonFatal(t, context = "device_identity_delete_failed")
         }
     }
 
@@ -332,7 +332,7 @@ class AndroidKeystoreDeviceIdentity(
             KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         } catch (t: Throwable) {
             val err = DeviceIdentityException("AndroidKeyStore unavailable", t)
-            AgentTelemetryHolder.nonFatal(err, context = "device_identity_keystore_load")
+            MdmTelemetryHolder.nonFatal(err, context = "device_identity_keystore_load")
             throw err
         }
     }
@@ -366,7 +366,7 @@ class AndroidKeystoreDeviceIdentity(
                 levelName,
             )
         } catch (t: Throwable) {
-            AgentTelemetryHolder.nonFatal(t, context = "device_identity_keyinfo_read")
+            MdmTelemetryHolder.nonFatal(t, context = "device_identity_keyinfo_read")
             Triple(false, false, "unknown")
         }
 
@@ -410,7 +410,7 @@ class AndroidKeystoreDeviceIdentity(
             builder.setIsStrongBoxBacked(true)
             true
         } catch (t: Throwable) {
-            AgentTelemetryHolder.nonFatal(
+            MdmTelemetryHolder.nonFatal(
                 t, context = "device_identity_strongbox_request_failed",
             )
             false

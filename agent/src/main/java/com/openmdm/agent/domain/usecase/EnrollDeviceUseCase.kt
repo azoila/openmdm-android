@@ -7,9 +7,9 @@ import com.openmdm.agent.data.EnrollmentRequest
 import com.openmdm.agent.data.MDMApi
 import com.openmdm.agent.data.MDMRepository
 import com.openmdm.agent.domain.repository.IEnrollmentRepository
-import com.openmdm.agent.security.CanonicalEnrollmentMessage
-import com.openmdm.agent.security.DeviceIdentity
-import com.openmdm.agent.security.DeviceIdentityException
+import com.openmdm.library.security.CanonicalEnrollmentMessage
+import com.openmdm.library.security.DeviceIdentity
+import com.openmdm.library.security.DeviceIdentityException
 import com.openmdm.agent.telemetry.AgentTelemetryHolder
 import com.openmdm.agent.util.DeviceInfoCollector
 import com.openmdm.agent.util.SignatureGenerator

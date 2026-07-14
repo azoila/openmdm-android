@@ -11,11 +11,11 @@ import com.openmdm.agent.data.local.dao.CommandDao
 import com.openmdm.agent.data.repository.AppRepositoryImpl
 import com.openmdm.agent.domain.repository.IAppRepository
 import com.openmdm.agent.domain.repository.IEnrollmentRepository
-import com.openmdm.agent.network.ProtocolHeaderInterceptor
+import com.openmdm.library.network.ProtocolHeaderInterceptor
 import com.openmdm.agent.network.RetryInterceptor
-import com.openmdm.agent.network.ServerCertificatePinner
-import com.openmdm.agent.security.AndroidKeystoreDeviceIdentity
-import com.openmdm.agent.security.DeviceIdentity
+import com.openmdm.agent.network.AgentCertificatePinner
+import com.openmdm.library.security.AndroidKeystoreDeviceIdentity
+import com.openmdm.library.security.DeviceIdentity
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -32,6 +32,16 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    /**
+     * The protocol-v2 header interceptor lives in `:library` and is deliberately
+     * un-annotated there — a published AAR should not carry javax.inject
+     * annotations for consumers who do not use Hilt. So the agent binds it here.
+     */
+    @Provides
+    @Singleton
+    fun provideProtocolHeaderInterceptor(): ProtocolHeaderInterceptor =
+        ProtocolHeaderInterceptor()
 
     @Provides
     @Singleton
@@ -59,7 +69,7 @@ object AppModule {
                 // and pin rotation use the same cadence. See
                 // ServerCertificatePinner for the gradle property
                 // wiring and the README for how to obtain the pin.
-                ServerCertificatePinner.fromBuildConfig()?.let { pinner ->
+                AgentCertificatePinner.fromBuildConfig()?.let { pinner ->
                     certificatePinner(pinner)
                 }
             }
