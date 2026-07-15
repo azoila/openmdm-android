@@ -91,19 +91,99 @@ object ManagedProvisioning {
     }
 
     /**
-     * The result a `GET_PROVISIONING_MODE` activity must hand back.
+     * Build the Intent that starts **work-profile** provisioning (BYOD).
      *
-     * OpenMDM manages **fully managed devices** — kiosks, signage, dedicated
-     * hardware. It does not manage work profiles on personal phones, so it always
-     * answers `PROVISIONING_MODE_FULLY_MANAGED_DEVICE`. An app that wants work
-     * profiles builds its own result.
+     * Unlike [buildProvisioningIntent], this does not require a factory-fresh
+     * device: an employee runs it on their own phone to add a managed work
+     * profile beside their personal space. The app becomes Profile Owner of the
+     * new profile and can touch nothing outside it.
      */
-    fun fullyManagedDeviceResult(): Intent = Intent().apply {
+    fun buildWorkProfileIntent(
+        adminComponent: ComponentName,
+        config: EnrollmentConfig,
+    ): Intent = Intent(DevicePolicyManager.ACTION_PROVISION_MANAGED_PROFILE).apply {
         putExtra(
-            DevicePolicyManager.EXTRA_PROVISIONING_MODE,
-            DevicePolicyManager.PROVISIONING_MODE_FULLY_MANAGED_DEVICE,
+            DevicePolicyManager.EXTRA_PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME,
+            adminComponent,
+        )
+        putExtra(
+            DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE,
+            QREnrollmentParser.configToPersistableBundle(config),
         )
     }
+
+    /**
+     * The result a `GET_PROVISIONING_MODE` activity hands back.
+     *
+     * The DPC no longer *only* manages fully-managed devices: it can now answer
+     * work-profile and COPE as well, chosen from the enrollment config. The
+     * platform offers a mode only if the DPC declares support for it here.
+     *
+     * COPE and plain work-profile both answer `MANAGED_PROFILE` at this step —
+     * the org-owned distinction that separates them is set by the provisioning
+     * path, not by this result.
+     */
+    fun provisioningModeResult(mode: ProvisioningMode): Intent = Intent().apply {
+        val platformMode = when (mode) {
+            ProvisioningMode.FULLY_MANAGED_DEVICE ->
+                DevicePolicyManager.PROVISIONING_MODE_FULLY_MANAGED_DEVICE
+            ProvisioningMode.WORK_PROFILE ->
+                DevicePolicyManager.PROVISIONING_MODE_MANAGED_PROFILE
+            // COPE answers MANAGED_PROFILE here too: at the GET_PROVISIONING_MODE
+            // step the platform only distinguishes "device" from "profile". The
+            // org-owned bit that makes a profile COPE rather than plain BYOD is
+            // established by the provisioning *path* (the device came through
+            // org-owned setup), not by this result — so both map to the same
+            // answer, and the DPC gains its extra org-owned powers from the
+            // platform, not from what it returns here.
+            ProvisioningMode.COMPANY_OWNED_PERSONALLY_ENABLED ->
+                DevicePolicyManager.PROVISIONING_MODE_MANAGED_PROFILE
+        }
+        putExtra(DevicePolicyManager.EXTRA_PROVISIONING_MODE, platformMode)
+    }
+
+    /**
+     * Choose the provisioning mode to answer with, honouring what the platform
+     * permits.
+     *
+     * The setup wizard passes `EXTRA_PROVISIONING_ALLOWED_PROVISIONING_MODES` on
+     * the incoming intent — the set of modes valid for *how this device was
+     * launched into provisioning*. Answering a mode outside that set fails the
+     * provisioning outright. So: prefer what the operator asked for, but if the
+     * platform does not allow it, fall back to the first mode it does. A QR code
+     * requesting a work profile on a device launched down the device-owner path
+     * must degrade to fully-managed, not brick the setup.
+     */
+    fun resolveMode(intent: Intent, desired: ProvisioningMode): ProvisioningMode {
+        val allowed = allowedModes(intent)
+        if (allowed.isEmpty()) return desired  // platform stated no constraint
+
+        val desiredPlatform = platformModeFor(desired)
+        if (desiredPlatform in allowed) return desired
+
+        // Map the first allowed platform mode back to our enum.
+        return when (allowed.first()) {
+            DevicePolicyManager.PROVISIONING_MODE_MANAGED_PROFILE -> ProvisioningMode.WORK_PROFILE
+            else -> ProvisioningMode.FULLY_MANAGED_DEVICE
+        }
+    }
+
+    private fun allowedModes(intent: Intent): List<Int> =
+        intent.getIntegerArrayListExtra(
+            DevicePolicyManager.EXTRA_PROVISIONING_ALLOWED_PROVISIONING_MODES,
+        ) ?: emptyList()
+
+    private fun platformModeFor(mode: ProvisioningMode): Int = when (mode) {
+        ProvisioningMode.FULLY_MANAGED_DEVICE ->
+            DevicePolicyManager.PROVISIONING_MODE_FULLY_MANAGED_DEVICE
+        ProvisioningMode.WORK_PROFILE,
+        ProvisioningMode.COMPANY_OWNED_PERSONALLY_ENABLED ->
+            DevicePolicyManager.PROVISIONING_MODE_MANAGED_PROFILE
+    }
+
+    /** Backwards-compatible shortcut for the fully-managed answer. */
+    fun fullyManagedDeviceResult(): Intent =
+        provisioningModeResult(ProvisioningMode.FULLY_MANAGED_DEVICE)
 
     /**
      * Read the OpenMDM enrollment config out of a provisioning intent.

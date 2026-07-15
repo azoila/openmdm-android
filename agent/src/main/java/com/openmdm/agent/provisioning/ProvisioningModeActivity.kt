@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.util.Log
 import com.openmdm.library.enrollment.ManagedProvisioning
+import com.openmdm.library.enrollment.ProvisioningMode
 import com.openmdm.library.telemetry.MdmTelemetryHolder
 
 /**
@@ -27,17 +28,24 @@ class ProvisioningModeActivity : Activity() {
 
         val config = ManagedProvisioning.extractConfig(intent)
 
+        // Answer the mode the operator asked for in the QR / config, but only if
+        // the platform allows it for how this device was launched into
+        // provisioning — otherwise degrade rather than brick the setup wizard.
+        // Defaults to fully-managed when unset, preserving historical behaviour.
+        val requested = config?.provisioningMode ?: ProvisioningMode.FULLY_MANAGED_DEVICE
+        val mode = ManagedProvisioning.resolveMode(intent, requested)
+
         Log.i(
             TAG,
-            "Provisioning mode requested; answering FULLY_MANAGED_DEVICE " +
+            "Provisioning mode requested; answering $mode " +
                 "(server=${config?.serverUrl ?: "not supplied"})",
         )
         MdmTelemetryHolder.event(
             "provisioning_mode_requested",
-            mapOf("has_config" to (config != null)),
+            mapOf("has_config" to (config != null), "mode" to mode.name),
         )
 
-        setResult(RESULT_OK, ManagedProvisioning.fullyManagedDeviceResult())
+        setResult(RESULT_OK, ManagedProvisioning.provisioningModeResult(mode))
         finish()
     }
 

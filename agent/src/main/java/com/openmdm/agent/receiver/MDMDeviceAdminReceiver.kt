@@ -8,6 +8,7 @@ import android.widget.Toast
 import com.openmdm.agent.R
 import com.openmdm.agent.data.ProvisioningStore
 import com.openmdm.agent.worker.WorkScheduler
+import com.openmdm.library.device.WorkProfileManager
 import com.openmdm.library.enrollment.ManagedProvisioning
 import com.openmdm.library.telemetry.MdmTelemetryHolder
 
@@ -84,6 +85,17 @@ class MDMDeviceAdminReceiver : DeviceAdminReceiver() {
 
         ProvisioningStore(context).save(config)
 
+        // A work profile is created *disabled*. Until we enable it, its apps do
+        // not appear in the launcher and the user is left with a half-set-up
+        // phone. This is the one step a work-profile provision must not skip —
+        // and it is a no-op on a fully-managed device (we are Device Owner
+        // there, not Profile Owner), so it is safe to attempt unconditionally.
+        if (workProfileManagerOrNull(context)?.let { it.isProfileOwner() } == true) {
+            WorkProfileManager.create(context, getComponentName(context))
+                .enableProfile()
+                .onFailure { Log.w(TAG, "Failed to enable work profile", it) }
+        }
+
         Log.i(TAG, "Provisioned for ${config.serverUrl}; scheduling enrollment")
         MdmTelemetryHolder.event(
             "provisioning_complete",
@@ -111,6 +123,9 @@ class MDMDeviceAdminReceiver : DeviceAdminReceiver() {
         super.onPasswordSucceeded(context, intent, userHandle)
         // Report successful unlock
     }
+
+    private fun workProfileManagerOrNull(context: Context): WorkProfileManager? =
+        runCatching { WorkProfileManager.create(context, getComponentName(context)) }.getOrNull()
 
     companion object {
         private const val TAG = "MDMDeviceAdmin"

@@ -416,6 +416,7 @@ class DeviceManager private constructor(
     private var _managedConfigurationManager: ManagedConfigurationManager? = null
     private var _systemUpdateManager: SystemUpdateManager? = null
     private var _certificateManager: CertificateManager? = null
+    private var _workProfileManager: WorkProfileManager? = null
 
     /**
      * Get HardwareManager for WiFi, Bluetooth, GPS, USB control
@@ -503,6 +504,20 @@ class DeviceManager private constructor(
     fun getCertificateManager(): CertificateManager {
         return _certificateManager ?: CertificateManager.create(context, adminComponent).also {
             _certificateManager = it
+        }
+    }
+
+    /**
+     * Work-profile (Profile Owner) operations — for a device managed as BYOD or
+     * COPE rather than a fully-managed device.
+     *
+     * Most of DeviceManager's methods do not apply inside a work profile (you
+     * cannot reboot or factory-reset a device from a profile you are merely the
+     * owner of). This is the surface that does.
+     */
+    fun getWorkProfileManager(): WorkProfileManager {
+        return _workProfileManager ?: WorkProfileManager.create(context, adminComponent).also {
+            _workProfileManager = it
         }
     }
 
@@ -689,5 +704,6 @@ class DeviceManager private constructor(
         _managedConfigurationManager = null
         _systemUpdateManager = null
         _certificateManager = null
+        _workProfileManager = null
     }
 }
