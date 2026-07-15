@@ -60,6 +60,13 @@ class LauncherViewModelTest {
     private lateinit var deviceInfoCollector: DeviceInfoCollector
     private lateinit var viewModel: LauncherViewModel
 
+    // One scheduler for the whole test. Every test uses runTest(testDispatcher)
+    // so the runTest scope, Dispatchers.setMain, and advanceUntilIdle() all share
+    // this scheduler. Constructing a bare StandardTestDispatcher() and calling
+    // runTest {} (which builds its OWN scheduler) is what made these tests flaky:
+    // the ViewModel's init-launched flow collectors ran on one scheduler while
+    // the assertions advanced another, so whether state had settled before the
+    // check was a race.
     private val testDispatcher = StandardTestDispatcher()
     private val testPackageName = "com.openmdm.agent"
 
@@ -124,7 +131,7 @@ class LauncherViewModelTest {
     // ============================================
 
     @Test
-    fun `initial state has correct defaults`() = runTest {
+    fun `initial state has correct defaults`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -139,7 +146,7 @@ class LauncherViewModelTest {
     }
 
     @Test
-    fun `screen state starts as loading`() = runTest {
+    fun `screen state starts as loading`() = runTest(testDispatcher) {
         viewModel = createViewModel()
 
         // Before any coroutines run, screen state starts as Loading
@@ -156,7 +163,7 @@ class LauncherViewModelTest {
     // ============================================
 
     @Test
-    fun `showBlockedOverlay sets blockedAppPackage`() = runTest {
+    fun `showBlockedOverlay sets blockedAppPackage`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -166,7 +173,7 @@ class LauncherViewModelTest {
     }
 
     @Test
-    fun `dismissBlockedOverlay clears blockedAppPackage`() = runTest {
+    fun `dismissBlockedOverlay clears blockedAppPackage`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -180,7 +187,7 @@ class LauncherViewModelTest {
     }
 
     @Test
-    fun `dismissBlockedOverlay emits BlockedOverlayDismissed event`() = runTest {
+    fun `dismissBlockedOverlay emits BlockedOverlayDismissed event`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -198,7 +205,7 @@ class LauncherViewModelTest {
     // ============================================
 
     @Test
-    fun `openAdminPanel emits AdminPanelRequested event`() = runTest {
+    fun `openAdminPanel emits AdminPanelRequested event`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -212,7 +219,7 @@ class LauncherViewModelTest {
     }
 
     @Test
-    fun `openAdminPanel dismisses blocked overlay`() = runTest {
+    fun `openAdminPanel dismisses blocked overlay`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -230,7 +237,7 @@ class LauncherViewModelTest {
     // ============================================
 
     @Test
-    fun `isAppAllowed returns true in default mode`() = runTest {
+    fun `isAppAllowed returns true in default mode`() = runTest(testDispatcher) {
         // In default mode (no config), all apps are allowed
         every { launchAppUseCase.isAppAllowed(any(), null) } returns true
 
@@ -241,7 +248,7 @@ class LauncherViewModelTest {
     }
 
     @Test
-    fun `isAppAllowed checks allowlist in allowlist mode`() = runTest {
+    fun `isAppAllowed checks allowlist in allowlist mode`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -273,7 +280,7 @@ class LauncherViewModelTest {
     }
 
     @Test
-    fun `isAppAllowed checks blocklist in blocklist mode`() = runTest {
+    fun `isAppAllowed checks blocklist in blocklist mode`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -303,7 +310,7 @@ class LauncherViewModelTest {
     // ============================================
 
     @Test
-    fun `updateConfig changes columns and showBottomBar`() = runTest {
+    fun `updateConfig changes columns and showBottomBar`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -326,7 +333,7 @@ class LauncherViewModelTest {
     }
 
     @Test
-    fun `updateConfig sets kiosk mode for allowlist`() = runTest {
+    fun `updateConfig sets kiosk mode for allowlist`() = runTest(testDispatcher) {
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -420,7 +427,7 @@ class LauncherViewModelTest {
     // ============================================
 
     @Test
-    fun `screen state shows enrollment when not enrolled`() = runTest {
+    fun `screen state shows enrollment when not enrolled`() = runTest(testDispatcher) {
         // Update enrollment state to not enrolled
         enrollmentStateFlow.value = EnrollmentState(
             isEnrolled = false
@@ -434,7 +441,7 @@ class LauncherViewModelTest {
     }
 
     @Test
-    fun `uiState has correct defaults for enrolled device`() = runTest {
+    fun `uiState has correct defaults for enrolled device`() = runTest(testDispatcher) {
         // Already enrolled with policy (default setup)
         viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
