@@ -5,9 +5,12 @@
 
 Official Android components for [OpenMDM](https://github.com/azoila/openmdm) - the embeddable Mobile Device Management SDK.
 
-> [!CAUTION]
-> **This project is under active development and is NOT ready for production use.**
-> APIs may change without notice. Use at your own risk.
+> [!NOTE]
+> **Under active development.** APIs may change between 0.x releases. The
+> agent is ready for evaluation and pilots — see the
+> [prebuilt demo APK](#option-0-try-the-prebuilt-demo-agent) — but a full
+> real-hardware Device Owner verification pass is still in progress, so we
+> don't yet recommend it for production fleets.
 
 ## Overview
 
