@@ -20,6 +20,25 @@ This repository contains:
 
 ## Quick Start
 
+### Option 0: Try the Prebuilt Demo Agent
+
+Best for: evaluating OpenMDM without building anything.
+
+Every [GitHub release](https://github.com/azoila/openmdm-android/releases)
+ships a signed, generic demo agent APK (`openmdm-agent-<tag>.apk`) plus a
+`provisioning-checksum.txt` containing the ready-to-use
+`PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM` for QR provisioning. The APK
+is server-agnostic — the server URL and enrollment configuration arrive via
+the provisioning QR's admin-extras bundle, so one APK works against any
+OpenMDM server.
+
+The demo APK is built without a TLS certificate pin (fine for evaluation;
+production fleets should build their own pinned agent — see
+[Building](#building)).
+
+For a guided end-to-end walkthrough against a local server, follow the
+[openmdm-demo Android Quick Start](https://github.com/azoila/openmdm-demo/blob/main/docs/android-quickstart.md).
+
 ### Option 1: Fork the Agent App
 
 Best for: Building a branded MDM agent with full functionality.
@@ -71,11 +90,11 @@ allprojects {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.azoila.openmdm-android:library:0.2.0")
+    implementation("com.github.azoila.openmdm-android:library:0.3.0")
 }
 ```
 
-> **Note**: Replace `0.2.0` with the latest release version or use `main-SNAPSHOT` for the latest development version.
+> **Note**: Replace `0.3.0` with the latest release version or use `main-SNAPSHOT` for the latest development version.
 
 ## Library Usage
 
@@ -115,6 +134,16 @@ if (deviceManager.isDeviceAdmin()) {
 ```
 
 ### MDM Server Communication
+
+> **How enrollment authenticates.** The agent app prefers *device-pinned-key*
+> enrollment: it requests a single-use challenge from
+> `GET /agent/enroll/challenge`, generates an ECDSA P-256 keypair in the
+> device's hardware Keystore, and signs the canonical enrollment message; the
+> server verifies and pins the public key (requires OpenMDM server ≥ 0.9 with
+> challenge storage). The HMAC path shown below — signing with a shared
+> `deviceSecret` — is the fallback, and remains the primary path for library
+> embedders using `MDMClient` directly. All client requests carry the
+> `X-Openmdm-Protocol: 2` header, which requires server ≥ 0.3.0.
 
 ```kotlin
 import com.openmdm.library.MDMClient
@@ -204,17 +233,53 @@ To enable full MDM capabilities, the agent must be set as Device Owner.
 adb shell dpm set-device-owner com.openmdm.agent/.receiver.MDMDeviceAdminReceiver
 ```
 
-### Zero-Touch Enrollment (Production)
-
-Configure your devices through [Android Zero-Touch](https://www.android.com/enterprise/management/zero-touch/) or Samsung Knox.
+The device must have no accounts and no secondary users. Note that the ADB
+path grants Device Owner but delivers **no provisioning extras** — the agent
+has no server URL from this flow, so it uses the compiled-in
+`MDM_SERVER_URL` (gradle `-PmdmServerUrl`, default `http://10.0.2.2:3000/mdm`
+for emulators) and you enroll manually from the agent's enrollment screen.
 
 ### QR Code Provisioning
 
-Generate a provisioning QR code using the OpenMDM CLI:
+A factory-reset device (tap the welcome screen 6 times to launch the
+scanner) provisions from a QR containing the standard Android DPC extras
+plus OpenMDM configuration in the admin-extras bundle:
+
+| Admin-extras key | Meaning |
+|---|---|
+| `openmdm.server_url` | MDM base URL, as reachable from the device (required for self-enrollment) |
+| `openmdm.device_secret` | enrollment secret for the HMAC path (optional with pinned-key enrollment) |
+| `openmdm.enrollment_token` | enrollment token / device code (optional) |
+| `openmdm.policy_id`, `openmdm.group_id` | initial assignment (optional) |
+
+Generate the QR with the OpenMDM CLI (≥ 0.6.0):
 
 ```bash
-npx openmdm enroll qr --output enrollment.png
+npx @openmdm/cli enroll qr \
+  --server-url https://mdm.example.com/mdm \
+  --apk-url https://github.com/azoila/openmdm-android/releases/download/<tag>/openmdm-agent-<tag>.apk \
+  --checksum <from the release's provisioning-checksum.txt> \
+  --output enrollment.png
 ```
+
+After scanning, the platform downloads and verifies the APK, sets it as
+Device Owner, and the agent self-enrolls on first connectivity
+(`adb logcat -s MDMDeviceAdmin EnrollmentWorker` to follow along).
+
+If you built your own APK, compute its checksum with `apksigner` — the APK
+is signed with APK Signature Scheme v2+, which `keytool -printcert -jarfile`
+cannot read:
+
+```bash
+BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+"$BT/apksigner" verify --print-certs agent-release.apk \
+  | awk '/certificate SHA-256 digest/ {print $NF; exit}' \
+  | xxd -r -p | base64 | tr '+/' '-_' | tr -d '='
+```
+
+### Zero-Touch Enrollment (Production)
+
+Configure your devices through [Android Zero-Touch](https://www.android.com/enterprise/management/zero-touch/) or Samsung Knox, using the same DPC component and admin-extras bundle as the QR payload.
 
 ## Project Structure
 
@@ -237,7 +302,6 @@ openmdm-android/
 │   │   └── MDMClient.kt      # High-level client
 │   └── build.gradle.kts
 │
-├── docs/                     # Documentation
 ├── build.gradle.kts          # Root build file
 └── settings.gradle.kts       # Module configuration
 ```
@@ -300,7 +364,12 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 
 ## Protocol Compatibility
 
-This Android agent is designed to work with [OpenMDM Server](https://github.com/azoila/openmdm) v0.2.0+.
+This Android agent speaks protocol v2 (the `X-Openmdm-Protocol: 2` header)
+and requires [OpenMDM Server](https://github.com/azoila/openmdm) **≥ 0.3.0**.
+Device-pinned-key enrollment additionally requires server **≥ 0.9** with a
+database adapter that implements challenge storage (the bundled Drizzle
+adapter does); against older servers the agent falls back to HMAC enrollment
+automatically. The latest server release is recommended.
 
 The API protocol is defined in the `@openmdm/client` TypeScript package. Keep the Kotlin models in sync when updating.
 
@@ -310,10 +379,12 @@ The library module is published via [JitPack](https://jitpack.io/#azoila/openmdm
 
 ### Using a Release Version
 
-Releases are automatically available on JitPack when a GitHub release is created:
+Releases are automatically available on JitPack when a GitHub release is
+created (each release also ships the signed demo agent APK as an asset —
+see [Quick Start, Option 0](#option-0-try-the-prebuilt-demo-agent)):
 
 ```kotlin
-implementation("com.github.azoila.openmdm-android:library:0.2.0")
+implementation("com.github.azoila.openmdm-android:library:0.3.0")
 ```
 
 ### Using a Specific Commit
