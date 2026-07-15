@@ -1,0 +1,138 @@
+# Builds a signed demo agent APK and attaches it (plus the QR-provisioning
+# signature checksum) to the GitHub release, so users can try OpenMDM without
+# building the agent themselves.
+#
+# The APK is generic on purpose: the server URL and enrollment configuration
+# arrive via the provisioning QR's admin-extras bundle at enrollment time, so
+# one published APK works against any OpenMDM server. It is built with
+# -PallowUnpinnedRelease=true (no TLS certificate pin baked in) — fine for
+# demos and evaluation; production fleets should build their own pinned agent
+# as documented in agent/build.gradle.kts.
+#
+# Signing uses a dedicated demo keystore from repository secrets. A stable
+# signing certificate matters more than usual here: device-owner QR
+# provisioning pins the SHA-256 of the signing certificate, so if the
+# certificate changed between releases, every previously generated QR code
+# would refuse the new APK.
+#
+# Required secrets (one-time setup):
+#   OPENMDM_KEYSTORE_BASE64    base64 of the keystore file
+#   OPENMDM_KEYSTORE_PASSWORD  keystore password
+#   OPENMDM_KEY_ALIAS          key alias
+#   OPENMDM_KEY_PASSWORD       key password
+#
+# To create the keystore:
+#   keytool -genkeypair -v -keystore openmdm-demo-release.keystore \
+#     -alias openmdm-demo -keyalg RSA -keysize 4096 -validity 10000 \
+#     -dname "CN=OpenMDM Demo Agent, O=OpenMDM"
+#   base64 -i openmdm-demo-release.keystore | gh secret set OPENMDM_KEYSTORE_BASE64
+# Keep the keystore file backed up — losing it breaks the provisioning
+# checksum continuity for all previously published QR codes.
+
+name: Release APK
+
+on:
+  release:
+    types: [published]
+  # Dispatch runs build everything and upload the APK as a workflow artifact
+  # instead of attaching to a release — for verifying the pipeline.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    name: Build & publish signed demo agent APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.OPENMDM_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::OPENMDM_KEYSTORE_BASE64 secret is not set. See the header of this workflow file for one-time keystore setup."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Build signed release APK
+        env:
+          OPENMDM_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          OPENMDM_KEYSTORE_PASSWORD: ${{ secrets.OPENMDM_KEYSTORE_PASSWORD }}
+          OPENMDM_KEY_ALIAS: ${{ secrets.OPENMDM_KEY_ALIAS }}
+          OPENMDM_KEY_PASSWORD: ${{ secrets.OPENMDM_KEY_PASSWORD }}
+        run: >-
+          ./gradlew --no-daemon
+          :agent:assembleRelease
+          -PallowUnpinnedRelease=true
+
+      - name: Compute provisioning checksum and name artifacts
+        id: artifacts
+        run: |
+          APK=agent/build/outputs/apk/release/agent-release.apk
+          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          OUT="openmdm-agent-${TAG}.apk"
+          cp "$APK" "$OUT"
+
+          # QR provisioning pins the URL-safe-base64 SHA-256 of the SIGNING
+          # CERTIFICATE (not of the APK file). apksigner handles v2+-only
+          # signatures, which keytool -printcert -jarfile does not.
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$BT/apksigner" verify --print-certs "$OUT"
+          HEX="$("$BT/apksigner" verify --print-certs "$OUT" \
+            | awk '/certificate SHA-256 digest/ {print $NF; exit}')"
+          CHECKSUM="$(echo "$HEX" | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')"
+
+          {
+            echo "OpenMDM demo agent — QR provisioning values for ${TAG}"
+            echo
+            echo "PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM:"
+            echo "  ${CHECKSUM}"
+            echo
+            echo "Use it with the demo server's /mdm/enrollment/qr endpoint or:"
+            echo "  npx @openmdm/cli enroll qr \\"
+            echo "    --server-url https://<your-server>/mdm \\"
+            echo "    --apk-url <public URL of this APK> \\"
+            echo "    --checksum ${CHECKSUM}"
+            echo
+            echo "Signing certificate SHA-256 (hex): ${HEX}"
+          } > provisioning-checksum.txt
+
+          cat provisioning-checksum.txt
+          echo "apk=${OUT}" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "${{ github.event.release.tag_name }}"
+          "${{ steps.artifacts.outputs.apk }}"
+          provisioning-checksum.txt
+          --clobber
+
+      - name: Upload workflow artifact (dispatch verification runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmdm-agent-apk
+          path: |
+            ${{ steps.artifacts.outputs.apk }}
+            provisioning-checksum.txt

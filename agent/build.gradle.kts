@@ -43,6 +43,24 @@ android {
         )
     }
 
+    // Release signing, driven entirely by environment variables so CI can
+    // sign with the demo-release keystore (see .github/workflows/release.yml)
+    // while a plain local `assembleRelease` keeps producing an unsigned APK,
+    // exactly as before. QR provisioning pins the SHA-256 of the signing
+    // certificate, so published demo APKs must all carry the same signature —
+    // an ad-hoc debug key would change the provisioning checksum every build.
+    val releaseKeystorePath: String? = System.getenv("OPENMDM_KEYSTORE_FILE")
+    signingConfigs {
+        if (!releaseKeystorePath.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = System.getenv("OPENMDM_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("OPENMDM_KEY_ALIAS")
+                keyPassword = System.getenv("OPENMDM_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -51,6 +69,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (!releaseKeystorePath.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             isMinifyEnabled = false
