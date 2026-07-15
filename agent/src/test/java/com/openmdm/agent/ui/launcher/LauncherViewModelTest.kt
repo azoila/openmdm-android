@@ -122,7 +122,11 @@ class LauncherViewModelTest {
             enrollDeviceUseCase = enrollDeviceUseCase,
             loadLauncherAppsUseCase = loadLauncherAppsUseCase,
             launchAppUseCase = launchAppUseCase,
-            deviceInfoCollector = deviceInfoCollector
+            deviceInfoCollector = deviceInfoCollector,
+            // The IO dispatcher shares the test scheduler, so loadApps' background
+            // work runs under advanceUntilIdle()'s control instead of escaping to
+            // the real thread pool and clobbering UI state at an uncontrolled time.
+            ioDispatcher = testDispatcher,
         )
     }
 

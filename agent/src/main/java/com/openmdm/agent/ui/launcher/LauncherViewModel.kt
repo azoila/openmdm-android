@@ -3,6 +3,8 @@ package com.openmdm.agent.ui.launcher
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import com.openmdm.agent.di.IoDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -60,7 +62,8 @@ class LauncherViewModel @Inject constructor(
     private val enrollDeviceUseCase: EnrollDeviceUseCase,
     private val loadLauncherAppsUseCase: LoadLauncherAppsUseCase,
     private val launchAppUseCase: LaunchAppUseCase,
-    private val deviceInfoCollector: DeviceInfoCollector
+    private val deviceInfoCollector: DeviceInfoCollector,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     /** Screen state for enrollment-first flow */
@@ -162,7 +165,7 @@ class LauncherViewModel @Inject constructor(
             }
 
             try {
-                val result = withContext(Dispatchers.IO) {
+                val result = withContext(ioDispatcher) {
                     enrollDeviceUseCase(deviceCode)
                 }
 
@@ -256,7 +259,7 @@ class LauncherViewModel @Inject constructor(
             try {
                 // Load policy settings if not already loaded
                 if (launcherConfig == null) {
-                    launcherConfig = withContext(Dispatchers.IO) {
+                    launcherConfig = withContext(ioDispatcher) {
                         loadPolicySettings()
                     }
                     Log.d(TAG, "Loaded launcher config from storage: $launcherConfig")
@@ -266,11 +269,11 @@ class LauncherViewModel @Inject constructor(
                         Log.d(TAG, "No saved policy settings, fetching from server...")
                         val state = mdmRepository.getEnrollmentState()
                         if (state.isEnrolled) {
-                            withContext(Dispatchers.IO) {
+                            withContext(ioDispatcher) {
                                 fetchInitialPolicy(state)
                             }
                             // Try loading again after heartbeat
-                            launcherConfig = withContext(Dispatchers.IO) {
+                            launcherConfig = withContext(ioDispatcher) {
                                 loadPolicySettings()
                             }
                             Log.d(TAG, "Loaded launcher config after heartbeat: $launcherConfig")
@@ -278,7 +281,7 @@ class LauncherViewModel @Inject constructor(
                     }
                 }
 
-                val result = withContext(Dispatchers.IO) {
+                val result = withContext(ioDispatcher) {
                     loadLauncherAppsUseCase(launcherConfig)
                 }
 
