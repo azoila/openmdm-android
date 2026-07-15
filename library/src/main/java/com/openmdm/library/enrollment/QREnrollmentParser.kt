@@ -80,6 +80,7 @@ object QREnrollmentParser {
     const val OPENMDM_GROUP_ID = "openmdm.group_id"
     const val OPENMDM_CONFIG_URL = "openmdm.config_url"
     const val OPENMDM_ENROLLMENT_TOKEN = "openmdm.enrollment_token"
+    const val OPENMDM_PROVISIONING_MODE = "openmdm.provisioning_mode"
 
     /**
      * Parse a QR code content string into an EnrollmentConfig.
@@ -402,6 +403,7 @@ object QREnrollmentParser {
             config.groupId?.let { putString(OPENMDM_GROUP_ID, it) }
             config.configUrl?.let { putString(OPENMDM_CONFIG_URL, it) }
             config.enrollmentToken?.let { putString(OPENMDM_ENROLLMENT_TOKEN, it) }
+            putString(OPENMDM_PROVISIONING_MODE, config.provisioningMode.name)
         }
     }
 
@@ -426,7 +428,11 @@ object QREnrollmentParser {
             configUrl = bundle.getString(OPENMDM_CONFIG_URL)
                 ?: bundle.getString("configUrl"),
             enrollmentToken = bundle.getString(OPENMDM_ENROLLMENT_TOKEN)
-                ?: bundle.getString("enrollmentToken")
+                ?: bundle.getString("enrollmentToken"),
+            provisioningMode = ProvisioningMode.fromString(
+                bundle.getString(OPENMDM_PROVISIONING_MODE)
+                    ?: bundle.getString("provisioningMode"),
+            )
         )
     }
 }
@@ -469,7 +475,13 @@ data class EnrollmentConfig(
     val policyId: String? = null,
     val groupId: String? = null,
     val configUrl: String? = null,
-    val enrollmentToken: String? = null
+    val enrollmentToken: String? = null,
+    /**
+     * How the operator wants this device managed: fully-managed, work profile,
+     * or COPE. Read at the GET_PROVISIONING_MODE step. Defaults to fully-managed
+     * — the historical behaviour — when unset.
+     */
+    val provisioningMode: ProvisioningMode = ProvisioningMode.FULLY_MANAGED_DEVICE
 )
 
 /**
