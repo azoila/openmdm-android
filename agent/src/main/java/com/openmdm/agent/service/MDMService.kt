@@ -188,7 +188,7 @@ class MDMService : LifecycleService() {
 
         heartbeatJob = lifecycleScope.launch {
             val provider = mdmRepository.getPushProvider()
-            if (provider != null && provider != PUSH_PROVIDER_POLLING) {
+            if (!shouldRunPollLoop(provider)) {
                 Log.i(TAG, "Push provider '$provider' delivers commands; no poll loop")
                 return@launch
             }
@@ -1424,6 +1424,19 @@ class MDMService : LifecycleService() {
 
         /** Floor for the in-process poll loop, so it can never hammer the server. */
         private const val MIN_POLL_INTERVAL_MS = 15_000L
+
+        /**
+         * Whether the foreground service should run its in-process command
+         * poll loop for the given persisted push provider.
+         *
+         * Runs for "polling" and for null (a legacy enrollment predating the
+         * persisted provider, or one with no push channel — either way the
+         * only way it can receive commands is by polling). A no-op for any
+         * real push provider (fcm/mqtt/websocket), where the push wakes the
+         * device and the WorkManager keep-alive suffices.
+         */
+        internal fun shouldRunPollLoop(provider: String?): Boolean =
+            provider == null || provider == PUSH_PROVIDER_POLLING
 
         const val ACTION_START = "com.openmdm.agent.START"
         const val ACTION_STOP = "com.openmdm.agent.STOP"
