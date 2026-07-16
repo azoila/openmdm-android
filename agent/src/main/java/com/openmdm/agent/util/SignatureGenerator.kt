@@ -1,6 +1,7 @@
 package com.openmdm.agent.util
 
 import com.openmdm.agent.BuildConfig
+import com.openmdm.agent.data.ProvisioningStore
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
@@ -8,6 +9,15 @@ import javax.inject.Singleton
 
 /**
  * Generates HMAC signatures for device enrollment.
+ *
+ * The signing secret follows the same precedence as the server URL
+ * (see `AppModule.provideServerUrl`): a secret delivered in the
+ * provisioning admin extras (`openmdm.device_secret`) wins, and the
+ * compiled-in `BuildConfig.DEVICE_SECRET` is the fallback for fleets
+ * that fork and rebuild the agent. A stock APK provisioned by QR has
+ * no meaningful compiled-in secret, so signing with anything but the
+ * provisioned one guarantees a signature mismatch on servers that
+ * take the HMAC path.
  *
  * The canonical message is a nine-field pipe-delimited string:
  *
@@ -32,9 +42,14 @@ import javax.inject.Singleton
  * must land in lockstep with the server side.
  */
 @Singleton
-class SignatureGenerator @Inject constructor() {
+class SignatureGenerator @Inject constructor(
+    private val provisioningStore: ProvisioningStore,
+) {
 
-    private val secret: String = BuildConfig.DEVICE_SECRET
+    // Resolved at signing time, not construction time: the provisioning
+    // receiver writes the store while this singleton may already exist.
+    private val secret: String
+        get() = provisioningStore.deviceSecret ?: BuildConfig.DEVICE_SECRET
 
     /**
      * Generate an HMAC-SHA256 enrollment signature over the canonical

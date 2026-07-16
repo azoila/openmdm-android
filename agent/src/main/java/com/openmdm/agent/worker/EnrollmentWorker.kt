@@ -32,6 +32,7 @@ class EnrollmentWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val enrollDevice: EnrollDeviceUseCase,
     private val enrollmentRepository: IEnrollmentRepository,
+    private val provisioningStore: ProvisioningStore,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -42,8 +43,7 @@ class EnrollmentWorker @AssistedInject constructor(
             return Result.success()
         }
 
-        val store = ProvisioningStore(applicationContext)
-        val serverUrl = store.serverUrl
+        val serverUrl = provisioningStore.serverUrl
         if (serverUrl == null) {
             // Nothing to enroll against, and no retry will change that.
             Log.w(TAG, "No provisioned server URL; giving up")
@@ -53,7 +53,7 @@ class EnrollmentWorker @AssistedInject constructor(
         // The pairing code the operator embedded in the QR payload. Without one,
         // the server must be configured to auto-enroll — otherwise there is
         // nothing to identify this device with.
-        val token = store.enrollmentToken ?: ""
+        val token = provisioningStore.enrollmentToken ?: ""
 
         return enrollDevice(token, method = EnrollDeviceUseCase.METHOD_PROVISIONED).fold(
             onSuccess = {

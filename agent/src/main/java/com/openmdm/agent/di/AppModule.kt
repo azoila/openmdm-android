@@ -94,6 +94,12 @@ object AppModule {
         @ApplicationContext context: Context,
     ): DeviceIdentity = AndroidKeystoreDeviceIdentity(context)
 
+    @Provides
+    @Singleton
+    fun provideProvisioningStore(
+        @ApplicationContext context: Context,
+    ): ProvisioningStore = ProvisioningStore(context)
+
     /**
      * The server this device actually talks to.
      *

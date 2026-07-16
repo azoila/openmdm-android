@@ -41,8 +41,10 @@ import javax.inject.Inject
  * server repo for the full flow.
  *
  * **HMAC path (fallback):** the agent signs the nine-field
- * canonical form with `BuildConfig.DEVICE_SECRET` and submits the
- * resulting hex HMAC. No public key, no challenge.
+ * canonical form with the device secret — the provisioning-time
+ * secret when one was delivered in the admin extras, otherwise
+ * `BuildConfig.DEVICE_SECRET` — and submits the resulting hex
+ * HMAC. No public key, no challenge.
  *
  * ## When the fallback fires
  *

@@ -1,6 +1,10 @@
 package com.openmdm.agent.util
 
 import com.google.common.truth.Truth.assertThat
+import com.openmdm.agent.BuildConfig
+import com.openmdm.agent.data.ProvisioningStore
+import io.mockk.every
+import io.mockk.mockk
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import org.junit.Test
@@ -14,15 +18,22 @@ import org.junit.Test
  * assert the exact bytes that get HMAC'd, not just the final hex
  * output, so a drift shows up as a diff in the expected string.
  *
- * The tests do NOT depend on `BuildConfig.DEVICE_SECRET` because
- * that value is set at build time and varies per flavor. Instead
- * they invoke the same underlying HMAC-SHA256 logic with a known
- * fixture secret and compare against an independently-computed
+ * The generator resolves its secret through [ProvisioningStore]
+ * (provisioned secret first, `BuildConfig.DEVICE_SECRET` as the
+ * fallback), so the tests construct it with a mocked store and a
+ * known fixture secret, comparing against an independently-computed
  * expected signature. If the canonical form ever regresses back
  * to the broken pre-0.2.0 `"{identifier}:{timestamp}"` form, every
  * test in this file fails loudly.
  */
 class SignatureGeneratorTest {
+
+    private fun generatorWithSecret(provisionedSecret: String?): SignatureGenerator {
+        val store = mockk<ProvisioningStore> {
+            every { deviceSecret } returns provisionedSecret
+        }
+        return SignatureGenerator(store)
+    }
 
     private fun hmacSha256(message: String, secret: String): String {
         val mac = Mac.getInstance("HmacSHA256")
@@ -110,12 +121,6 @@ class SignatureGeneratorTest {
         // compute the HMAC with a known secret, and verify the generator
         // produces the same hex. If the generator's canonical form ever
         // drifts, this test fails.
-        //
-        // We can't directly inject a secret into SignatureGenerator
-        // (it reads BuildConfig.DEVICE_SECRET in @Singleton construction),
-        // so this test reimplements the HMAC path with a known fixture
-        // and asserts the canonical-form contract via the private helper
-        // above.
         val secret = "test-secret"
         val model = "Pixel 7"
         val manufacturer = "Google"
@@ -134,17 +139,58 @@ class SignatureGeneratorTest {
         )
         val expectedSignature = hmacSha256(expectedMessage, secret)
 
-        // Re-compute with the same algorithm the generator uses. If the
-        // generator ever switches HMAC algorithms or digests, this test
-        // still passes (they match because we're both using
-        // HmacSHA256), but the canonical-form regression catches field
-        // drift which is the real risk.
-        val actualSignature = hmacSha256(expectedMessage, secret)
+        val actualSignature = generatorWithSecret(secret).generateEnrollmentSignature(
+            model = model,
+            manufacturer = manufacturer,
+            osVersion = osVersion,
+            serialNumber = serialNumber,
+            imei = imei,
+            macAddress = macAddress,
+            androidId = androidId,
+            method = method,
+            timestamp = timestamp,
+        )
         assertThat(actualSignature).isEqualTo(expectedSignature)
 
         // A 64-char lowercase hex string is the documented return shape.
         assertThat(actualSignature).hasLength(64)
         assertThat(actualSignature).matches("[0-9a-f]+")
+    }
+
+    @Test
+    fun `provisioned secret wins over the compiled-in default`() {
+        // A stock APK provisioned by QR carries no meaningful compiled-in
+        // secret — the one delivered in the admin extras must be the one
+        // that signs, or every HMAC-path enrollment fails.
+        val signature = generatorWithSecret("provisioned-secret").generateEnrollmentSignature(
+            model = "M", manufacturer = "F", osVersion = "14",
+            serialNumber = "SN", imei = null, macAddress = null,
+            androidId = "AID", method = "qr", timestamp = "T",
+        )
+
+        val message = canonical(
+            model = "M", manufacturer = "F", osVersion = "14",
+            serialNumber = "SN", imei = null, macAddress = null,
+            androidId = "AID", method = "qr", timestamp = "T",
+        )
+        assertThat(signature).isEqualTo(hmacSha256(message, "provisioned-secret"))
+        assertThat(signature).isNotEqualTo(hmacSha256(message, BuildConfig.DEVICE_SECRET))
+    }
+
+    @Test
+    fun `falls back to the compiled-in secret when nothing was provisioned`() {
+        val signature = generatorWithSecret(null).generateEnrollmentSignature(
+            model = "M", manufacturer = "F", osVersion = "14",
+            serialNumber = "SN", imei = null, macAddress = null,
+            androidId = "AID", method = "manual", timestamp = "T",
+        )
+
+        val message = canonical(
+            model = "M", manufacturer = "F", osVersion = "14",
+            serialNumber = "SN", imei = null, macAddress = null,
+            androidId = "AID", method = "manual", timestamp = "T",
+        )
+        assertThat(signature).isEqualTo(hmacSha256(message, BuildConfig.DEVICE_SECRET))
     }
 
     @Test
