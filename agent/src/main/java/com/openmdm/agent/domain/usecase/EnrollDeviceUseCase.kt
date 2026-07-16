@@ -81,14 +81,23 @@ class EnrollDeviceUseCase @Inject constructor(
      * The server URL is whatever provisioning supplied, falling back to
      * `BuildConfig.MDM_SERVER_URL` — see AppModule.provideServerUrl.
      *
-     * @param deviceCode The enrollment code provided by the administrator
+     * @param deviceCode Pairing code chosen by the operator. Kept on the
+     *   device as the local enrollment reference (companion apps read it
+     *   for activation); the server identifies the device by its hardware
+     *   identifiers and never sees the code.
+     * @param method How this enrollment was initiated. Must be one of the
+     *   server's `EnrollmentMethod` values (`manual`, `qr`, `nfc`,
+     *   `zero-touch`, `knox`, `app-only`, `adb`) — servers configured with
+     *   `enrollment.allowedMethods` reject anything else.
      * @return Result indicating success or failure with error message
      */
-    suspend operator fun invoke(deviceCode: String): Result<Unit> {
+    suspend operator fun invoke(
+        deviceCode: String,
+        method: String = METHOD_MANUAL,
+    ): Result<Unit> {
         return try {
             val deviceInfo = deviceInfoCollector.collectDeviceInfo()
             val timestamp = generateTimestamp()
-            val method = "device_code:$deviceCode"
 
             // Attempt the pinned-key path first. Falls back to HMAC
             // on the specific failures documented in the class header,
@@ -286,6 +295,18 @@ class EnrollDeviceUseCase @Inject constructor(
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
         sdf.timeZone = TimeZone.getTimeZone("UTC")
         return sdf.format(Date())
+    }
+
+    companion object {
+        /** Operator typed a code into the enrollment screen. */
+        const val METHOD_MANUAL = "manual"
+
+        /**
+         * Enrollment triggered by managed provisioning. The platform does
+         * not tell the DPC which vector started setup (QR, NFC, `afw#`,
+         * zero-touch), so we report the by-far most common one.
+         */
+        const val METHOD_PROVISIONED = "qr"
     }
 }
 

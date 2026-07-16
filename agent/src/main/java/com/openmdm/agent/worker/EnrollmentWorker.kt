@@ -55,7 +55,7 @@ class EnrollmentWorker @AssistedInject constructor(
         // nothing to identify this device with.
         val token = store.enrollmentToken ?: ""
 
-        return enrollDevice(token).fold(
+        return enrollDevice(token, method = EnrollDeviceUseCase.METHOD_PROVISIONED).fold(
             onSuccess = {
                 Log.i(TAG, "Enrolled via provisioning against $serverUrl")
                 MdmTelemetryHolder.event("provisioning_enrollment_succeeded")
