@@ -331,15 +331,23 @@ class DeviceManager private constructor(
 
     fun setLockTaskPackages(packages: List<String>): Result<Unit> = runCatching {
         require(isDeviceOwner()) { "Lock task requires Device Owner" }
-        devicePolicyManager.setLockTaskPackages(adminComponent, packages.toTypedArray())
+        // distinct(): setLockTaskPackages rejects a duplicate entry with
+        // "duplicate element", so a caller that includes the agent's own
+        // package (or repeats one) must not blow up the whole call.
+        devicePolicyManager.setLockTaskPackages(adminComponent, packages.distinct().toTypedArray())
     }
 
     fun startLockTaskMode(packageName: String): Result<Unit> = runCatching {
         require(isDeviceOwner()) { "Lock task requires Device Owner" }
 
+        // distinct(): when the kiosk target IS the agent, packageName equals
+        // context.packageName and setLockTaskPackages rejects the duplicate
+        // ("duplicate element"), silently failing a single-app kiosk on the
+        // agent itself. The sibling KioskManager.enterKioskMode already guards
+        // this the same way.
         devicePolicyManager.setLockTaskPackages(
             adminComponent,
-            arrayOf(packageName, context.packageName)
+            listOf(packageName, context.packageName).distinct().toTypedArray()
         )
 
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
