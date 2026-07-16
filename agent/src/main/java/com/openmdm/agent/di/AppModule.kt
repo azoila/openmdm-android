@@ -13,6 +13,7 @@ import com.openmdm.agent.data.local.dao.CommandDao
 import com.openmdm.agent.data.repository.AppRepositoryImpl
 import com.openmdm.agent.domain.repository.IAppRepository
 import com.openmdm.agent.domain.repository.IEnrollmentRepository
+import com.openmdm.library.network.AgentEnvelopeInterceptor
 import com.openmdm.library.network.ProtocolHeaderInterceptor
 import com.openmdm.agent.network.RetryInterceptor
 import com.openmdm.agent.network.AgentCertificatePinner
@@ -47,15 +48,24 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideAgentEnvelopeInterceptor(): AgentEnvelopeInterceptor =
+        AgentEnvelopeInterceptor()
+
+    @Provides
+    @Singleton
     fun provideOkHttpClient(
         protocolHeaderInterceptor: ProtocolHeaderInterceptor,
         retryInterceptor: RetryInterceptor,
+        agentEnvelopeInterceptor: AgentEnvelopeInterceptor,
     ): OkHttpClient {
         return OkHttpClient.Builder()
             // Protocol header must be stamped FIRST so the retry
             // interceptor's synthetic requests carry it too.
             .addInterceptor(protocolHeaderInterceptor)
             .addInterceptor(retryInterceptor)
+            // Envelope decoding sits INSIDE the retry interceptor so a
+            // decoded `retry` action surfaces to it as a retryable 503.
+            .addInterceptor(agentEnvelopeInterceptor)
             .apply {
                 // TLS certificate pinning is opt-in via BuildConfig.
                 // When a valid pin is configured at build time, we

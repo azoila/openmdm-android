@@ -37,12 +37,13 @@ import okhttp3.Response
  * ## Rollout caveat
  *
  * Older server deployments that don't recognize the header simply
- * ignore it and serve the legacy v1 shape — but this APK no longer
- * parses v1. If you ship an agent build with this interceptor
- * active against a server that only emits v1, requests will appear
- * to succeed at the HTTP layer but the response parser will fail.
- * **The server side must be able to emit v2 envelopes before this
- * APK is shipped to the fleet.** openmdm server ≥ 0.3.0 is required.
+ * ignore it and serve the legacy v1 shape. That is fine: the decoding
+ * half of the opt-in, [AgentEnvelopeInterceptor], only rewrites
+ * responses that actually carry the envelope signature, so bare v1
+ * bodies pass through unchanged. Sending this header WITHOUT
+ * installing [AgentEnvelopeInterceptor] is a bug — envelope responses
+ * would be parsed against the flat payload models and every field
+ * would silently land null.
  *
  * The header value must stay in sync with `@openmdm/core`'s
  * `AGENT_PROTOCOL_V2` constant (current value: `"2"`).
