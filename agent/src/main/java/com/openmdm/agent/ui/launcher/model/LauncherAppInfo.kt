@@ -99,6 +99,12 @@ sealed class LauncherEvent {
 
     /** Refresh apps requested */
     data object RefreshRequested : LauncherEvent()
+
+    /**
+     * A scanned QR config was persisted and enrollment work enqueued; the
+     * process must restart so the DI graph resolves the new server URL.
+     */
+    data object RestartForProvisioningRequested : LauncherEvent()
 }
 
 /**
@@ -112,7 +118,13 @@ sealed class LauncherScreenState {
     /** Enrollment screen - device needs to be enrolled before showing launcher */
     data class Enrollment(
         val errorMessage: String? = null,
-        val isEnrolling: Boolean = false
+        val isEnrolling: Boolean = false,
+        /**
+         * A provisioning enrollment (QR scan or managed provisioning) is
+         * queued or running in the background — the screen shows progress
+         * instead of asking for a device code.
+         */
+        val isAutoEnrolling: Boolean = false
     ) : LauncherScreenState()
 
     /** Main launcher screen - device is enrolled and ready */

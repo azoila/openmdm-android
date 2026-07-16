@@ -19,6 +19,23 @@ import javax.inject.Singleton
 class WorkScheduler @Inject constructor(
     private val workManager: WorkManager
 ) {
+    /**
+     * Instance flavor of [Companion.enqueueProvisioningEnrollment] for
+     * injected callers — the launcher's in-app QR scan flow.
+     */
+    fun enqueueProvisioningEnrollment(): Operation =
+        enqueueProvisioningEnrollment(workManager)
+
+    /**
+     * True while a provisioning enrollment is queued or running. The
+     * enrollment screen uses this to show "applying configuration" instead
+     * of asking for a device code that the pending work makes redundant.
+     */
+    fun isProvisioningEnrollmentPending(): Boolean = runCatching {
+        workManager.getWorkInfosForUniqueWork(EnrollmentWorker.WORK_NAME).get()
+            .any { info -> !info.state.isFinished }
+    }.getOrDefault(false)
+
     companion object {
         private const val TAG = "OpenMDM.WorkScheduler"
 
@@ -35,7 +52,10 @@ class WorkScheduler @Inject constructor(
          * re-provision), and each completion must not queue another enrollment on
          * top of one already in flight.
          */
-        fun enqueueProvisioningEnrollment(context: android.content.Context) {
+        fun enqueueProvisioningEnrollment(context: android.content.Context): Operation =
+            enqueueProvisioningEnrollment(WorkManager.getInstance(context))
+
+        private fun enqueueProvisioningEnrollment(workManager: WorkManager): Operation {
             Log.i(TAG, "Enqueuing post-provisioning enrollment")
 
             val constraints = Constraints.Builder()
@@ -52,7 +72,7 @@ class WorkScheduler @Inject constructor(
                 .addTag(EnrollmentWorker.WORK_NAME)
                 .build()
 
-            WorkManager.getInstance(context).enqueueUniqueWork(
+            return workManager.enqueueUniqueWork(
                 EnrollmentWorker.WORK_NAME,
                 ExistingWorkPolicy.KEEP,
                 request,

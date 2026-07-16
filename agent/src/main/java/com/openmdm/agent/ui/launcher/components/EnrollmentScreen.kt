@@ -52,8 +52,19 @@ fun EnrollmentScreen(
     isEnrolling: Boolean,
     onEnroll: (deviceCode: String) -> Unit,
     onScanQrCode: () -> Unit = {},
+    isAutoEnrolling: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    // A provisioning enrollment (QR scan / managed provisioning) is already
+    // queued — asking for a device code now would just race it.
+    if (isAutoEnrolling) {
+        LoadingScreen(
+            message = stringResource(R.string.enrollment_auto_enrolling),
+            modifier = modifier
+        )
+        return
+    }
+
     var deviceCode by remember { mutableStateOf("") }
 
     Box(
@@ -151,7 +162,8 @@ fun EnrollmentScreen(
                     )
                 }
 
-                // QR Code scan option (optional future feature)
+                // QR Code scan — same payload as managed provisioning, for
+                // devices already past the setup wizard.
                 TextButton(
                     onClick = onScanQrCode,
                     enabled = !isEnrolling

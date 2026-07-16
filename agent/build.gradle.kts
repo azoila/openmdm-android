@@ -124,6 +124,11 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.security.crypto)
 
+    // In-app QR enrollment scanner. ZXing (not ML Kit / the GMS code
+    // scanner) because kiosk hardware frequently ships without Google
+    // Play services.
+    implementation(libs.zxing.android.embedded)
+
     // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
