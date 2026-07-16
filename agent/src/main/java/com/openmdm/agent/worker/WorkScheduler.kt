@@ -20,13 +20,6 @@ class WorkScheduler @Inject constructor(
     private val workManager: WorkManager
 ) {
     /**
-     * Instance flavor of [Companion.enqueueProvisioningEnrollment] for
-     * injected callers — the launcher's in-app QR scan flow.
-     */
-    fun enqueueProvisioningEnrollment(): Operation =
-        enqueueProvisioningEnrollment(workManager)
-
-    /**
      * True while a provisioning enrollment is queued or running. The
      * enrollment screen uses this to show "applying configuration" instead
      * of asking for a device code that the pending work makes redundant.

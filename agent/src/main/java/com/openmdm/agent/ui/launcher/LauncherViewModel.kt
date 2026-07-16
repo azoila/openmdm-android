@@ -12,10 +12,8 @@ import com.openmdm.agent.data.EnrollmentState
 import com.openmdm.agent.data.HeartbeatRequest
 import com.openmdm.agent.data.InstalledAppData
 import com.openmdm.agent.data.LocationData
-import com.openmdm.agent.R
 import com.openmdm.agent.data.MDMApi
 import com.openmdm.agent.data.MDMRepository
-import com.openmdm.agent.data.ProvisioningStore
 import com.openmdm.agent.domain.repository.IEnrollmentRepository
 import com.openmdm.agent.domain.usecase.EnrollDeviceUseCase
 import com.openmdm.agent.domain.usecase.LaunchAppUseCase
@@ -27,7 +25,6 @@ import com.openmdm.agent.ui.launcher.model.LauncherScreenState
 import com.openmdm.agent.ui.launcher.model.LauncherUiState
 import com.openmdm.agent.util.DeviceInfoCollector
 import com.openmdm.agent.worker.WorkScheduler
-import com.openmdm.library.enrollment.QREnrollmentParser
 import com.openmdm.library.policy.LauncherConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -67,7 +64,6 @@ class LauncherViewModel @Inject constructor(
     private val loadLauncherAppsUseCase: LoadLauncherAppsUseCase,
     private val launchAppUseCase: LaunchAppUseCase,
     private val deviceInfoCollector: DeviceInfoCollector,
-    private val provisioningStore: ProvisioningStore,
     private val workScheduler: WorkScheduler,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -141,9 +137,9 @@ class LauncherViewModel @Inject constructor(
                 when {
                     !state.isEnrolled -> {
                         // Not enrolled - show enrollment screen. If a
-                        // provisioning enrollment (QR scan / managed
-                        // provisioning) is already queued, surface progress
-                        // instead of a redundant device-code prompt.
+                        // managed-provisioning enrollment is already queued,
+                        // surface progress instead of a redundant
+                        // device-code prompt.
                         val autoEnrolling = withContext(ioDispatcher) {
                             workScheduler.isProvisioningEnrollmentPending()
                         }
@@ -201,59 +197,6 @@ class LauncherViewModel @Inject constructor(
                     ) ?: it
                 }
             }
-        }
-    }
-
-    /**
-     * Enroll from a scanned QR code.
-     *
-     * The QR carries the same payload managed provisioning delivers in the
-     * admin extras (server URL, enrollment secret, optional pairing token) —
-     * [QREnrollmentParser] understands the DPC JSON, key-value, and simple
-     * formats. The config is persisted to [ProvisioningStore] and enrollment
-     * is delegated to the existing provisioning worker, then the process is
-     * restarted: the server URL is resolved into the DI graph (Retrofit base
-     * URL) at process start, so a scanned URL only takes effect in a fresh
-     * process. The enqueued work is persisted by WorkManager and survives
-     * the restart.
-     */
-    fun enrollFromScannedQr(content: String) {
-        viewModelScope.launch {
-            _screenState.update {
-                (it as? LauncherScreenState.Enrollment)?.copy(
-                    isEnrolling = true,
-                    errorMessage = null
-                ) ?: it
-            }
-
-            val config = QREnrollmentParser.parseQRCode(content).getOrNull()
-            if (config == null) {
-                showQrError(R.string.enrollment_qr_unrecognized)
-                return@launch
-            }
-            if (config.serverUrl.isNullOrBlank()) {
-                showQrError(R.string.enrollment_qr_no_server)
-                return@launch
-            }
-
-            withContext(ioDispatcher) {
-                provisioningStore.save(config)
-                // Block until WorkManager has PERSISTED the request — the
-                // restart right after this kills the process, and an
-                // un-persisted enqueue would be lost with it.
-                runCatching { workScheduler.enqueueProvisioningEnrollment().result.get() }
-            }
-
-            _events.emit(LauncherEvent.RestartForProvisioningRequested)
-        }
-    }
-
-    private fun showQrError(messageRes: Int) {
-        _screenState.update {
-            (it as? LauncherScreenState.Enrollment)?.copy(
-                isEnrolling = false,
-                errorMessage = context.getString(messageRes)
-            ) ?: it
         }
     }
 

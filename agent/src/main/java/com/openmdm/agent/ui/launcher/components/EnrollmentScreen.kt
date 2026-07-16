@@ -16,7 +16,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhonelinkSetup
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,7 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,12 +49,11 @@ fun EnrollmentScreen(
     errorMessage: String?,
     isEnrolling: Boolean,
     onEnroll: (deviceCode: String) -> Unit,
-    onScanQrCode: () -> Unit = {},
     isAutoEnrolling: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    // A provisioning enrollment (QR scan / managed provisioning) is already
-    // queued — asking for a device code now would just race it.
+    // A managed-provisioning enrollment is already queued — asking for a
+    // device code now would just race it.
     if (isAutoEnrolling) {
         LoadingScreen(
             message = stringResource(R.string.enrollment_auto_enrolling),
@@ -162,20 +159,11 @@ fun EnrollmentScreen(
                     )
                 }
 
-                // QR Code scan — same payload as managed provisioning, for
-                // devices already past the setup wizard.
-                TextButton(
-                    onClick = onScanQrCode,
-                    enabled = !isEnrolling
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.enrollment_scan_qr))
-                }
+                // QR enrollment is deliberately NOT offered here. The QR code
+                // is the Android managed-provisioning QR, scanned by the setup
+                // wizard on a factory-reset device — that is the only path that
+                // grants Device Owner. An in-app scan would enroll without DO
+                // (no silent installs, no true kiosk), which reads as broken.
             }
         }
     }
@@ -222,8 +210,7 @@ private fun EnrollmentScreenPreview() {
         EnrollmentScreen(
             errorMessage = null,
             isEnrolling = false,
-            onEnroll = { _ -> },
-            onScanQrCode = {}
+            onEnroll = { _ -> }
         )
     }
 }
@@ -235,8 +222,7 @@ private fun EnrollmentScreenErrorPreview() {
         EnrollmentScreen(
             errorMessage = "Invalid device code. Please try again.",
             isEnrolling = false,
-            onEnroll = { _ -> },
-            onScanQrCode = {}
+            onEnroll = { _ -> }
         )
     }
 }
@@ -248,8 +234,7 @@ private fun EnrollmentScreenLoadingPreview() {
         EnrollmentScreen(
             errorMessage = null,
             isEnrolling = true,
-            onEnroll = { _ -> },
-            onScanQrCode = {}
+            onEnroll = { _ -> }
         )
     }
 }

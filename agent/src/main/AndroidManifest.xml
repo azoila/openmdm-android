@@ -28,13 +28,6 @@
     <uses-permission android:name="android.permission.SET_TIME_ZONE"
         tools:ignore="ProtectedPermissions" />
 
-    <!-- In-app QR enrollment scanner. Not required: kiosk hardware without a
-         camera still enrolls via device code or managed provisioning. -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature
-        android:name="android.hardware.camera"
-        android:required="false" />
-
     <!-- Device Admin Permissions (when granted) -->
     <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN"
         tools:ignore="ProtectedPermissions" />
@@ -77,16 +70,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- QR enrollment scanner (ZXing capture locked to portrait) -->
-        <activity
-            android:name=".ui.launcher.PortraitCaptureActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"
-            android:stateNotNeeded="true"
-            android:theme="@style/zxing_CaptureTheme"
-            android:windowSoftInputMode="stateAlwaysHidden"
-            tools:ignore="LockedOrientationActivity" />
 
         <!-- MDM Service -->
         <service

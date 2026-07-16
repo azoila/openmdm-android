@@ -14,12 +14,8 @@
     <string name="enrollment_in_progress">Enrolling…</string>
     <string name="enrollment_success">Device enrolled successfully</string>
     <string name="enrollment_failed">Enrollment failed: %1$s</string>
-    <string name="enrollment_scan_qr">Scan QR Code</string>
     <string name="enrollment_enter_code_description">Enter the device code provided by your administrator to enroll this device.</string>
-    <string name="enrollment_qr_prompt">Scan the enrollment QR code from the dashboard</string>
-    <string name="enrollment_qr_unrecognized">Unrecognized QR code — scan the enrollment QR from the dashboard.</string>
-    <string name="enrollment_qr_no_server">The QR code contains no server URL.</string>
-    <string name="enrollment_auto_enrolling">Applying scanned configuration — enrolling…</string>
+    <string name="enrollment_auto_enrolling">Applying provisioned configuration — enrolling…</string>
 
     <!-- Status -->
     <string name="status_enrolled">Enrolled</string>

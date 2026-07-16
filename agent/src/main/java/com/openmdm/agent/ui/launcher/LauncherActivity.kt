@@ -7,11 +7,7 @@ import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
-import com.openmdm.agent.R
 import com.openmdm.agent.data.MDMRepository
 import com.openmdm.agent.service.MDMService
 import com.openmdm.agent.ui.MainActivity
@@ -20,7 +16,6 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.system.exitProcess
 
 /**
  * MDM Launcher Activity
@@ -43,12 +38,6 @@ class LauncherActivity : ComponentActivity() {
     @Inject
     lateinit var mdmRepository: MDMRepository
 
-    private val viewModel: LauncherViewModel by viewModels()
-
-    private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
-        result.contents?.let { viewModel.enrollFromScannedQr(it) }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -58,10 +47,7 @@ class LauncherActivity : ComponentActivity() {
         setContent {
             OpenMDMAgentTheme {
                 LauncherScreen(
-                    viewModel = viewModel,
-                    onAdminPanelRequested = ::openAdminPanel,
-                    onScanQrCode = ::openQrScanner,
-                    onRestartForProvisioning = ::restartForProvisionedEnrollment
+                    onAdminPanelRequested = ::openAdminPanel
                 )
             }
         }
@@ -107,40 +93,6 @@ class LauncherActivity : ComponentActivity() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         startActivity(intent)
-    }
-
-    /**
-     * Open the QR code scanner for enrollment. Accepts the same payload
-     * managed provisioning delivers — the DPC JSON the dashboard's
-     * Enrollment page renders, or the key-value / simple formats
-     * QREnrollmentParser understands.
-     */
-    private fun openQrScanner() {
-        qrScanLauncher.launch(
-            ScanOptions().apply {
-                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                setPrompt(getString(R.string.enrollment_qr_prompt))
-                setBeepEnabled(false)
-                setOrientationLocked(true)
-                setCaptureActivity(PortraitCaptureActivity::class.java)
-            }
-        )
-    }
-
-    /**
-     * Restart the process after a scanned config was persisted.
-     *
-     * The server URL is resolved into the DI graph (Retrofit's base URL) at
-     * process start, so a scanned server URL only takes effect in a fresh
-     * process. The enrollment work is already persisted in WorkManager's
-     * database and is picked up again on relaunch.
-     */
-    private fun restartForProvisionedEnrollment() {
-        val intent = Intent(this, LauncherActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        startActivity(intent)
-        finishAffinity()
-        exitProcess(0)
     }
 
     /**

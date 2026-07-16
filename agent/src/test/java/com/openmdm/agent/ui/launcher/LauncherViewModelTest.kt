@@ -8,7 +8,6 @@ import com.google.common.truth.Truth.assertThat
 import com.openmdm.agent.data.EnrollmentState
 import com.openmdm.agent.data.MDMApi
 import com.openmdm.agent.data.MDMRepository
-import com.openmdm.agent.data.ProvisioningStore
 import com.openmdm.agent.domain.repository.IEnrollmentRepository
 import com.openmdm.agent.domain.usecase.EnrollDeviceUseCase
 import com.openmdm.agent.domain.usecase.LaunchAppUseCase
@@ -26,7 +25,6 @@ import com.openmdm.library.policy.LauncherConfig
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,7 +59,6 @@ class LauncherViewModelTest {
     private lateinit var loadLauncherAppsUseCase: LoadLauncherAppsUseCase
     private lateinit var launchAppUseCase: LaunchAppUseCase
     private lateinit var deviceInfoCollector: DeviceInfoCollector
-    private lateinit var provisioningStore: ProvisioningStore
     private lateinit var workScheduler: WorkScheduler
     private lateinit var viewModel: LauncherViewModel
 
@@ -98,12 +95,10 @@ class LauncherViewModelTest {
         loadLauncherAppsUseCase = mockk(relaxed = true)
         launchAppUseCase = mockk(relaxed = true)
         deviceInfoCollector = mockk(relaxed = true)
-        provisioningStore = mockk(relaxed = true)
         workScheduler = mockk(relaxed = true)
         every { workScheduler.isProvisioningEnrollmentPending() } returns false
 
         every { context.packageName } returns testPackageName
-        every { context.getString(any()) } returns "error"
         every { context.packageManager } returns packageManager
         every { packageManager.queryIntentActivities(any<Intent>(), any<Int>()) } returns emptyList()
 
@@ -132,7 +127,6 @@ class LauncherViewModelTest {
             loadLauncherAppsUseCase = loadLauncherAppsUseCase,
             launchAppUseCase = launchAppUseCase,
             deviceInfoCollector = deviceInfoCollector,
-            provisioningStore = provisioningStore,
             workScheduler = workScheduler,
             // The IO dispatcher shares the test scheduler, so loadApps' background
             // work runs under advanceUntilIdle()'s control instead of escaping to
@@ -466,77 +460,6 @@ class LauncherViewModelTest {
         val screenState = viewModel.screenState.value
         assertThat(screenState).isInstanceOf(LauncherScreenState.Enrollment::class.java)
         assertThat((screenState as LauncherScreenState.Enrollment).isAutoEnrolling).isTrue()
-    }
-
-    // ============================================
-    // Scanned QR Enrollment Tests
-    // ============================================
-
-    @Test
-    fun `scanned QR with unknown format shows error and touches nothing`() = runTest(testDispatcher) {
-        enrollmentStateFlow.value = EnrollmentState(isEnrolled = false)
-        viewModel = createViewModel()
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        viewModel.enrollFromScannedQr("definitely not a provisioning payload")
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        val state = viewModel.screenState.value as LauncherScreenState.Enrollment
-        assertThat(state.errorMessage).isNotNull()
-        assertThat(state.isEnrolling).isFalse()
-        verify(exactly = 0) { provisioningStore.save(any()) }
-        verify(exactly = 0) { workScheduler.enqueueProvisioningEnrollment() }
-    }
-
-    @Test
-    fun `scanned QR without a server URL shows error and touches nothing`() = runTest(testDispatcher) {
-        enrollmentStateFlow.value = EnrollmentState(isEnrolled = false)
-        viewModel = createViewModel()
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        viewModel.enrollFromScannedQr("""{"openmdm.device_secret":"secret-only"}""")
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        val state = viewModel.screenState.value as LauncherScreenState.Enrollment
-        assertThat(state.errorMessage).isNotNull()
-        verify(exactly = 0) { provisioningStore.save(any()) }
-        verify(exactly = 0) { workScheduler.enqueueProvisioningEnrollment() }
-    }
-
-    @Test
-    fun `valid scanned QR persists config, enqueues enrollment, and requests restart`() = runTest(testDispatcher) {
-        enrollmentStateFlow.value = EnrollmentState(isEnrolled = false)
-        viewModel = createViewModel()
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        val qr = """
-            {
-              "openmdm.server_url": "http://192.168.1.10:3000/mdm",
-              "openmdm.device_secret": "scanned-secret",
-              "openmdm.enrollment_token": "STORE-042"
-            }
-        """.trimIndent()
-
-        viewModel.events.test {
-            viewModel.enrollFromScannedQr(qr)
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            assertThat(awaitItem()).isEqualTo(LauncherEvent.RestartForProvisioningRequested)
-            cancelAndIgnoreRemainingEvents()
-        }
-
-        // The config must be persisted BEFORE the restart event: the restart
-        // kills the process and the fresh DI graph reads the store.
-        verify {
-            provisioningStore.save(
-                match {
-                    it.serverUrl == "http://192.168.1.10:3000/mdm" &&
-                        it.deviceSecret == "scanned-secret" &&
-                        it.enrollmentToken == "STORE-042"
-                }
-            )
-        }
-        verify { workScheduler.enqueueProvisioningEnrollment() }
     }
 
     @Test

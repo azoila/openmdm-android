@@ -33,9 +33,7 @@ import com.openmdm.agent.ui.launcher.model.LauncherUiState
 @Composable
 fun LauncherScreen(
     viewModel: LauncherViewModel = hiltViewModel(),
-    onAdminPanelRequested: () -> Unit = {},
-    onScanQrCode: () -> Unit = {},
-    onRestartForProvisioning: () -> Unit = {}
+    onAdminPanelRequested: () -> Unit = {}
 ) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
 
@@ -47,7 +45,6 @@ fun LauncherScreen(
                 is LauncherEvent.BlockedOverlayDismissed -> { /* handled by UI state */ }
                 is LauncherEvent.RefreshRequested -> viewModel.loadApps()
                 is LauncherEvent.AppClicked -> { /* handled in ViewModel */ }
-                is LauncherEvent.RestartForProvisioningRequested -> onRestartForProvisioning()
             }
         }
     }
@@ -61,8 +58,7 @@ fun LauncherScreen(
                 errorMessage = state.errorMessage,
                 isEnrolling = state.isEnrolling,
                 isAutoEnrolling = state.isAutoEnrolling,
-                onEnroll = viewModel::enroll,
-                onScanQrCode = onScanQrCode
+                onEnroll = viewModel::enroll
             )
         }
         is LauncherScreenState.Launcher -> {
