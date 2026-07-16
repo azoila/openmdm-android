@@ -239,7 +239,14 @@ class DeviceInfoCollector @Inject constructor(
             packages.map { packageInfo ->
                 InstalledAppInfo(
                     packageName = packageInfo.packageName,
-                    version = packageInfo.versionName ?: "unknown",
+                    // versionName is a free-form string with no platform length
+                    // limit, but the server stores it in a varchar(50)
+                    // (mdm_device_apps.version in @openmdm/drizzle-adapter) and
+                    // rejects the WHOLE heartbeat when any single app exceeds
+                    // it — Google's TTS app ships a 53-char versionName in the
+                    // wild. Truncate defensively until the server widens the
+                    // column.
+                    version = (packageInfo.versionName ?: "unknown").take(MAX_APP_VERSION_LENGTH),
                     versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                         packageInfo.longVersionCode
                     } else {
@@ -331,5 +338,10 @@ class DeviceInfoCollector @Inject constructor(
         } catch (e: Exception) {
             null
         }
+    }
+
+    companion object {
+        /** Matches mdm_device_apps.version varchar(50) on the server. */
+        internal const val MAX_APP_VERSION_LENGTH = 50
     }
 }
