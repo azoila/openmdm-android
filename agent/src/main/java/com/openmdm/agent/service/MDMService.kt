@@ -151,7 +151,11 @@ class MDMService : LifecycleService() {
         }
         heartbeatStarted = true
 
-        // Use WorkManager for reliable periodic heartbeats
+        // WorkManager is the reliable background heartbeat: it survives
+        // process death and low-memory kills. But its periodic floor is 15
+        // minutes, so a sub-minute policy interval is silently clamped — fine
+        // as a keep-alive, too slow to collect commands promptly when there is
+        // no push channel to wake the device.
         val intervalMinutes = (heartbeatInterval / 60_000).coerceAtLeast(1)
         workScheduler.scheduleHeartbeat(intervalMinutes)
 
@@ -162,9 +166,59 @@ class MDMService : LifecycleService() {
         workScheduler.syncPendingCommands()
 
         Log.i(TAG, "Heartbeat scheduled via WorkManager (interval: ${intervalMinutes}min)")
+
+        // On the polling provider there is no push to deliver commands between
+        // those 15-minute WorkManager beats, so run an in-process poll loop
+        // while the foreground service is alive. Each tick is a real heartbeat,
+        // whose response carries pending commands (drained in sendHeartbeat).
+        startPollLoopIfPolling()
+    }
+
+    /**
+     * Launch the fast in-process heartbeat/command poll loop when the push
+     * provider is "polling" (or unknown — a device with no push channel can
+     * only receive commands by polling). No-op for fcm/mqtt/websocket, where
+     * the push wakes the device and the WorkManager keep-alive suffices.
+     *
+     * The loop lives on [lifecycleScope], so it is torn down automatically
+     * when the service stops; [stopHeartbeat] also cancels it explicitly.
+     */
+    private fun startPollLoopIfPolling() {
+        if (heartbeatJob?.isActive == true) return
+
+        heartbeatJob = lifecycleScope.launch {
+            val provider = mdmRepository.getPushProvider()
+            if (provider != null && provider != PUSH_PROVIDER_POLLING) {
+                Log.i(TAG, "Push provider '$provider' delivers commands; no poll loop")
+                return@launch
+            }
+
+            // Prefer the server-suggested poll interval, fall back to the
+            // heartbeat interval, and never poll faster than the floor — a
+            // runaway loop must not hammer the server or drain the battery.
+            val pollSeconds = mdmRepository.getPollingIntervalSeconds()
+            val intervalMs = ((pollSeconds?.toLong()?.times(1000L)) ?: heartbeatInterval)
+                .coerceAtLeast(MIN_POLL_INTERVAL_MS)
+            Log.i(TAG, "Polling provider: in-process poll loop every ${intervalMs}ms")
+
+            while (isActive) {
+                try {
+                    sendHeartbeat()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // One failed poll (network blip, transient 5xx) must not
+                    // kill the loop — the next tick retries.
+                    Log.w(TAG, "Poll-loop heartbeat failed: ${e.message}")
+                }
+                delay(intervalMs)
+            }
+        }
     }
 
     private fun stopHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
         workScheduler.cancelHeartbeat()
         heartbeatStarted = false
         Log.i(TAG, "Heartbeat cancelled")
@@ -1364,6 +1418,12 @@ class MDMService : LifecycleService() {
 
     companion object {
         private const val TAG = "OpenMDM.MDMService"
+
+        /** pushConfig.provider value that means "no push — poll for commands". */
+        private const val PUSH_PROVIDER_POLLING = "polling"
+
+        /** Floor for the in-process poll loop, so it can never hammer the server. */
+        private const val MIN_POLL_INTERVAL_MS = 15_000L
 
         const val ACTION_START = "com.openmdm.agent.START"
         const val ACTION_STOP = "com.openmdm.agent.STOP"

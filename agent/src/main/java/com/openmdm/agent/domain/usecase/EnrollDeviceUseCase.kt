@@ -131,6 +131,14 @@ class EnrollDeviceUseCase @Inject constructor(
                         mdmRepository.savePolicySettings(settingsJson)
                     }
 
+                    // Persist the push delivery config so the foreground
+                    // service knows whether to run an in-process poll loop
+                    // (polling provider) or rely on push (fcm/mqtt/websocket).
+                    mdmRepository.savePushConfig(
+                        provider = body.pushConfig.provider,
+                        pollingIntervalSeconds = body.pushConfig.pollingInterval,
+                    )
+
                     Result.success(Unit)
                 } ?: Result.failure(EnrollmentException("Empty response from server"))
             } else {

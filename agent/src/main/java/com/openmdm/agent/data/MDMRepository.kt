@@ -68,6 +68,17 @@ class MDMRepository @Inject constructor(
         val LAST_SYNC = stringPreferencesKey("last_sync")
         val PUSH_TOKEN = stringPreferencesKey("push_token")
 
+        /**
+         * Push delivery provider from the enrollment response's pushConfig
+         * ("fcm", "mqtt", "websocket", or "polling"). Drives whether the
+         * foreground service runs an in-process poll loop — see
+         * [com.openmdm.agent.service.MDMService].
+         */
+        val PUSH_PROVIDER = stringPreferencesKey("push_provider")
+
+        /** Server-suggested poll interval (seconds) for the polling provider. */
+        val POLLING_INTERVAL_SECONDS = intPreferencesKey("polling_interval_seconds")
+
         /** Consecutive heartbeat auth errors (401/404). Reset to 0 on successful heartbeat. */
         val CONSECUTIVE_AUTH_ERRORS = intPreferencesKey("consecutive_auth_errors")
 
@@ -271,6 +282,39 @@ class MDMRepository @Inject constructor(
      */
     suspend fun getPushToken(): String? {
         return context.dataStore.data.first()[Keys.PUSH_TOKEN]
+    }
+
+    /**
+     * Persist the push delivery config from the enrollment response.
+     *
+     * Stored outside [EnrollmentState] (and the encrypted backup) on
+     * purpose: it is server-derived configuration the next enrollment
+     * refreshes, not identity that must survive a data-store loss.
+     */
+    suspend fun savePushConfig(provider: String, pollingIntervalSeconds: Int?) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.PUSH_PROVIDER] = provider
+            if (pollingIntervalSeconds != null) {
+                preferences[Keys.POLLING_INTERVAL_SECONDS] = pollingIntervalSeconds
+            } else {
+                preferences.remove(Keys.POLLING_INTERVAL_SECONDS)
+            }
+        }
+    }
+
+    /**
+     * The push provider persisted at enrollment, or null if never set
+     * (older enrollments predating this field). A null provider is treated
+     * as polling by callers — the safe default, since a device with no
+     * known push channel can only receive commands by polling.
+     */
+    suspend fun getPushProvider(): String? {
+        return context.dataStore.data.first()[Keys.PUSH_PROVIDER]
+    }
+
+    /** Server-suggested poll interval in seconds, or null if unset. */
+    suspend fun getPollingIntervalSeconds(): Int? {
+        return context.dataStore.data.first()[Keys.POLLING_INTERVAL_SECONDS]
     }
 
     // ============================================
