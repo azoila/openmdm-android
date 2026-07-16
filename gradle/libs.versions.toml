@@ -21,7 +21,7 @@ zxingEmbedded = "4.3.0"
 # Testing
 junit = "4.13.2"
 junit5 = "5.10.2"
-mockk = "1.13.10"
+mockk = "1.14.11"
 truth = "1.4.2"
 androidxTestCore = "1.5.0"
 androidxTestRunner = "1.5.2"
