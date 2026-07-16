@@ -140,6 +140,14 @@ object QREnrollmentParser {
             ?: jsonObject.optString(OPENMDM_GROUP_ID, null)
             ?: jsonObject.optString("groupId", null)
 
+        val configUrl = adminExtras?.configUrl
+            ?: jsonObject.optString(OPENMDM_CONFIG_URL, null)
+            ?: jsonObject.optString("configUrl", null)
+
+        val enrollmentToken = adminExtras?.enrollmentToken
+            ?: jsonObject.optString(OPENMDM_ENROLLMENT_TOKEN, null)
+            ?: jsonObject.optString("enrollmentToken", null)
+
         return EnrollmentConfig(
             adminPackageName = jsonObject.optString(EXTRA_PROVISIONING_DEVICE_ADMIN_PACKAGE_NAME, null),
             adminComponentName = jsonObject.optString(EXTRA_PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME, null),
@@ -158,8 +166,8 @@ object QREnrollmentParser {
             deviceSecret = deviceSecret,
             policyId = policyId,
             groupId = groupId,
-            configUrl = adminExtras?.configUrl,
-            enrollmentToken = adminExtras?.enrollmentToken
+            configUrl = configUrl,
+            enrollmentToken = enrollmentToken
         )
     }
 

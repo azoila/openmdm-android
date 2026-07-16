@@ -109,6 +109,27 @@ class QREnrollmentParserTest {
     }
 
     @Test
+    fun `parseQRCode reads enrollment token and config URL from top level too`() {
+        // Every other openmdm.* field falls back from the admin extras bundle
+        // to a top-level key; enrollment_token and config_url used to be the
+        // exceptions, silently dropping the pairing token from flat payloads.
+        val json = """
+        {
+            "openmdm.server_url": "https://mdm.example.com",
+            "openmdm.enrollment_token": "STORE-042",
+            "openmdm.config_url": "https://mdm.example.com/config"
+        }
+        """.trimIndent()
+
+        val result = QREnrollmentParser.parseQRCode(json)
+
+        assertThat(result.isSuccess).isTrue()
+        val config = result.getOrThrow()
+        assertThat(config.enrollmentToken).isEqualTo("STORE-042")
+        assertThat(config.configUrl).isEqualTo("https://mdm.example.com/config")
+    }
+
+    @Test
     fun `parseQRCode parses JSON with provisioning options`() {
         val json = """
         {
