@@ -10,7 +10,13 @@ Official Android components for [OpenMDM](https://github.com/azoila/openmdm) - t
 > agent is ready for evaluation and pilots — see the
 > [prebuilt demo APK](#option-0-try-the-prebuilt-demo-agent) — but a full
 > real-hardware Device Owner verification pass is still in progress, so we
-> don't yet recommend it for production fleets.
+> don't yet recommend it for production fleets — see
+> [Verified hardware](#verified-hardware) for what has actually been run.
+>
+> **QR, NFC and zero-touch provisioning additionally depend on Google's
+> [DPC allowlist](#play-protect-and-the-dpc-allowlist), which OpenMDM is not
+> currently on.** The [ADB path](#using-adb-development) does not depend on it
+> and is the dependable way to evaluate today.
 
 ## Overview
 
@@ -39,6 +45,11 @@ The demo APK is built without a TLS certificate pin (fine for evaluation;
 production fleets should build their own pinned agent — see
 [Building](#building)).
 
+Provisioning this APK by QR depends on Google's DPC allowlist, which OpenMDM is
+not currently on — read
+[Play Protect and the DPC allowlist](#play-protect-and-the-dpc-allowlist) before
+you factory-reset a device for it.
+
 For a guided end-to-end walkthrough against a local server, follow the
 [openmdm-demo Android Quick Start](https://github.com/azoila/openmdm-demo/blob/main/docs/android-quickstart.md).
 
@@ -57,6 +68,15 @@ git clone https://github.com/YOUR_ORG/openmdm-android
 cd openmdm-android
 ./gradlew :agent:assembleRelease
 ```
+
+> [!IMPORTANT]
+> Play Protect identifies a DPC by its **signing certificate**, so a fork signed
+> with your own key is a distinct app to it — even with the same package name and
+> the same source commit. It will be blocked during QR, NFC and zero-touch
+> provisioning until Android Enterprise approves it, and getting that approval is
+> a Google process you should budget for before committing to a fork. See
+> [Play Protect and the DPC allowlist](#play-protect-and-the-dpc-allowlist).
+> Development builds and ADB provisioning are unaffected.
 
 ### Option 2: Use the Library
 
@@ -230,6 +250,57 @@ heartbeatResult.onSuccess { response ->
 
 To enable full MDM capabilities, the agent must be set as Device Owner.
 
+### Play Protect and the DPC allowlist
+
+> [!IMPORTANT]
+> Since late 2025, Google Play Protect enforces an **allowlist of approved device
+> policy controllers**. Only a DPC that Android Enterprise has verified and
+> approved may be installed during enterprise enrollment provisioning; a
+> non-approved one is blocked with *"App blocked to protect your device"* and
+> **provisioning cannot continue**. See
+> [Approved Android Enterprise device policy controllers allowlist](https://support.google.com/work/android/answer/16694822).
+
+Which paths this gates:
+
+| Provisioning path | Gated? | Why |
+|---|---|---|
+| QR, NFC, `afw#`, zero-touch | **Yes** | The platform downloads and installs the DPC for you, and Play Protect verifies it first. |
+| `adb shell dpm set-device-owner` | **No** | You install the APK yourself; nothing goes through provisioning-time verification. |
+
+**The OpenMDM demo agent is not currently on the allowlist**, and has not been
+submitted for approval. QR provisioning with the prebuilt APK may succeed, may be
+blocked outright, or may end at the setup wizard's generic *"Something went
+wrong"* screen — and the same APK can behave differently across attempts as the
+allowlist rolls out. Treat a successful QR run as a lucky one, not as evidence of
+approval, and use the [ADB path](#using-adb-development) when you need a
+repeatable evaluation.
+
+**Your own build is a different app.** Play Protect identifies a DPC by its
+signing certificate, so rebuilding from this repository with your own key is not
+covered by any approval the published APK may have. Same package name, same
+source commit, one cosmetic label change — still a new app to Play Protect, and
+expected to be blocked.
+
+**Getting a DPC approved** is a Google process, not an OpenMDM one, and there is
+no supported way around it:
+
+1. Verify the app complies with
+   [Mobile Unwanted Software](https://developers.google.com/android/play-protect/mobile-unwanted-software)
+   and is not a
+   [Potentially Harmful Application](https://developers.google.com/android/play-protect/potentially-harmful-applications).
+   Google calls out device financing solutions, standalone monitoring or
+   eavesdropping tools, and pushing or preloading apps without explicit user
+   consent as disqualifying.
+2. File a
+   [Play Protect appeal](https://support.google.com/googleplay/android-developer/contact/protectappeals)
+   for the blocked DPC.
+3. If you ship through an EMM, confirm with Android Enterprise that your DPC is
+   on the allowlist.
+
+Google publishes no review timeline, and community reports describe multi-week
+round trips with repeat submissions. Plan for it before committing a fleet to a
+custom DPC.
+
 ### Using ADB (Development)
 
 ```bash
@@ -243,6 +314,14 @@ has no server URL from this flow, so it uses the compiled-in
 for emulators) and you enroll manually from the agent's enrollment screen.
 
 ### QR Code Provisioning
+
+> [!NOTE]
+> This path goes through Play Protect's DPC verification. Read
+> [Play Protect and the DPC allowlist](#play-protect-and-the-dpc-allowlist)
+> first — it decides whether any of the below can work on your device. Check
+> the [version matrix](#version-matrix) too: a version-incorrect server fails
+> this flow *after* Device Owner is set, which reads like a provisioning bug
+> and is not one.
 
 A factory-reset device (tap the welcome screen 6 times to launch the
 scanner) provisions from a QR containing the standard Android DPC extras
@@ -266,8 +345,15 @@ npx @openmdm/cli enroll qr \
 ```
 
 After scanning, the platform downloads and verifies the APK, sets it as
-Device Owner, and the agent self-enrolls on first connectivity
-(`adb logcat -s MDMDeviceAdmin EnrollmentWorker` to follow along).
+Device Owner, and the agent self-enrolls on first connectivity:
+
+```bash
+adb logcat -s ProvisioningMode PolicyCompliance ProvisioningHandoff MDMDeviceAdmin EnrollmentWorker
+```
+
+`PolicyCompliance` reports `server=<url>` or `server=not supplied`, which is the
+quickest way to tell "the QR never carried a server URL" apart from "it did, and
+enrollment failed later".
 
 If you built your own APK, compute its checksum with `apksigner` — the APK
 is signed with APK Signature Scheme v2+, which `keytool -printcert -jarfile`
@@ -283,6 +369,10 @@ BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
 ### Zero-Touch Enrollment (Production)
 
 Configure your devices through [Android Zero-Touch](https://www.android.com/enterprise/management/zero-touch/) or Samsung Knox, using the same DPC component and admin-extras bundle as the QR payload.
+
+Like QR, this path installs the DPC through the platform, so it requires an
+approved DPC — see
+[Play Protect and the DPC allowlist](#play-protect-and-the-dpc-allowlist).
 
 ## Project Structure
 
@@ -365,16 +455,54 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 ./gradlew test
 ```
 
-## Protocol Compatibility
+## Compatibility
 
-This Android agent speaks protocol v2 (the `X-Openmdm-Protocol: 2` header)
-and requires [OpenMDM Server](https://github.com/azoila/openmdm) **≥ 0.3.0**.
-Device-pinned-key enrollment additionally requires server **≥ 0.9** with a
-database adapter that implements challenge storage (the bundled Drizzle
-adapter does); against older servers the agent falls back to HMAC enrollment
-automatically. The latest server release is recommended.
+### Version matrix
 
-The API protocol is defined in the `@openmdm/client` TypeScript package. Keep the Kotlin models in sync when updating.
+This Android agent speaks protocol **v2** (the `X-Openmdm-Protocol: 2` header).
+These are the pieces that have to agree, for agent **v0.4.0**:
+
+| Component | Minimum | Latest published | Why the minimum |
+|---|---|---|---|
+| [OpenMDM Server](https://github.com/azoila/openmdm) (`@openmdm/core`) | 0.3.0 | 0.11.1 | Protocol v2 floor. |
+| ↳ for device-pinned-key enrollment | 0.9.0 | 0.11.1 | `GET /agent/enroll/challenge` must exist, and the database adapter must implement challenge storage — the bundled Drizzle adapter does. Older servers answer 503 and the agent falls back to HMAC on its own. |
+| [`@openmdm/cli`](https://www.npmjs.com/package/@openmdm/cli) | 0.6.0 | 0.6.2 | The `enroll qr` subcommand. |
+| [`openmdm-demo`](https://github.com/azoila/openmdm-demo) | — | unversioned | Ships no releases or tags; track `main`, which pins its own server package versions. |
+| Android | 8.0 (API 26) | — | `minSdk 26`; the agent targets API 35. QR and zero-touch provisioning need the API 31+ handshake, which the agent implements. |
+
+Latest-published figures are as of 2026-09-02; running the newest release of
+each is recommended. The API protocol itself is defined in the `@openmdm/client`
+TypeScript package — keep the Kotlin models in sync when updating it.
+
+Two things the matrix cannot express, both of which will stop an enrollment
+that is otherwise version-correct:
+
+- **The QR must carry a server URL.** Without `openmdm.server_url` in the
+  admin-extras bundle the device becomes Device Owner and has nothing to enroll
+  against. See [QR Code Provisioning](#qr-code-provisioning).
+- **Without an `openmdm.enrollment_token`, the server must be configured to
+  auto-enroll** (`autoEnroll: true`, the demo default). The agent sends an empty
+  token, and a server that requires one will reject it.
+
+### Verified hardware
+
+Device Owner behaviour varies by OEM and Android version, so this table records
+what has actually been *run*, not what ought to work.
+
+| Device | Android | Agent | QR → Device Owner | Server enrollment | Policy applied | Source |
+|---|---|---|---|---|---|---|
+| Samsung SM-X210 | 16 | v0.4.0 | ⚠️ inconsistent across attempts | ❌ | ❌ | community report |
+
+No maintainer-run end-to-end verification on physical hardware is recorded yet —
+this is exactly the gap the development-status note at the top of this README
+refers to. The single community report above also predates the provisioning fix
+in which enrollment is queued from the policy-compliance activity rather than
+from the `PROFILE_PROVISIONING_COMPLETE` broadcast alone.
+
+If you complete a run — or fail one — please open an issue with the device model,
+Android version, agent version, and the logcat output from the tags listed under
+[QR Code Provisioning](#qr-code-provisioning). Failed runs are as useful as
+successful ones here, and both get added to this table.
 
 ## JitPack Publishing
 
