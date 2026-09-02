@@ -14,9 +14,10 @@ Official Android components for [OpenMDM](https://github.com/azoila/openmdm) - t
 > [Verified hardware](#verified-hardware) for what has actually been run.
 >
 > **QR, NFC and zero-touch provisioning additionally depend on Google's
-> [DPC allowlist](#play-protect-and-the-dpc-allowlist), which OpenMDM is not
-> currently on.** The [ADB path](#using-adb-development) does not depend on it
-> and is the dependable way to evaluate today.
+> [DPC allowlist](#play-protect-and-the-dpc-allowlist), which OpenMDM is not on
+> — QR provisioning is confirmed blocked on GMS hardware.** The
+> [ADB path](#using-adb-development) does not depend on it and is the way to
+> evaluate today.
 
 ## Overview
 
@@ -46,7 +47,7 @@ production fleets should build their own pinned agent — see
 [Building](#building)).
 
 Provisioning this APK by QR depends on Google's DPC allowlist, which OpenMDM is
-not currently on — read
+not on, and is confirmed blocked on GMS hardware — read
 [Play Protect and the DPC allowlist](#play-protect-and-the-dpc-allowlist) before
 you factory-reset a device for it.
 
@@ -267,13 +268,19 @@ Which paths this gates:
 | QR, NFC, `afw#`, zero-touch | **Yes** | The platform downloads and installs the DPC for you, and Play Protect verifies it first. |
 | `adb shell dpm set-device-owner` | **No** | You install the APK yourself; nothing goes through provisioning-time verification. |
 
-**The OpenMDM demo agent is not currently on the allowlist**, and has not been
-submitted for approval. QR provisioning with the prebuilt APK may succeed, may be
-blocked outright, or may end at the setup wizard's generic *"Something went
-wrong"* screen — and the same APK can behave differently across attempts as the
-allowlist rolls out. Treat a successful QR run as a lucky one, not as evidence of
-approval, and use the [ADB path](#using-adb-development) when you need a
-repeatable evaluation.
+**The OpenMDM demo agent is not on the allowlist**, and has not been submitted
+for approval. An independent evaluation established this with a control: on a
+Samsung SM-X210 / Android 16, Google's own TestDPC 9.0.12 — served from the same
+host, over the same network, on the same factory-reset device — passed Play
+Protect and completed provisioning, while the byte-identical upstream v0.4.0 APK
+was blocked with the non-approved-DPC message. That isolates the block to the DPC
+identity: not the network, not the host, not the device, not the QR payload.
+
+**A successful QR run is not evidence of approval.** The same APK and certificate
+were accepted on one attempt and blocked on a later one. Play Protect's
+antimalware verdict — the `SAFE` you may see in the logs — is a *different check*
+from the Android Enterprise DPC allowlist, and passing the first says nothing
+about the second.
 
 **Your own build is a different app.** Play Protect identifies a DPC by its
 signing certificate, so rebuilding from this repository with your own key is not
@@ -300,6 +307,21 @@ no supported way around it:
 Google publishes no review timeline, and community reports describe multi-week
 round trips with repeat submissions. Plan for it before committing a fleet to a
 custom DPC.
+
+#### Testing while unapproved
+
+There is no documented developer exemption, test account, or staging channel for
+an unapproved DPC — neither Google's allowlist page nor community write-ups
+describe one. What remains:
+
+| What you want to exercise | How |
+|---|---|
+| Device Owner APIs — policy, kiosk, commands, lock task | [ADB](#using-adb-development) on GMS hardware. Note it delivers **no** provisioning extras, so it does *not* cover the QR → admin-extras → enrollment path. |
+| The full QR path, admin extras included | A **non-GMS / AOSP** device or emulator image. With no Google Play there is no Play Protect DPC check, and custom-DPC QR provisioning works as designed. |
+| The full QR path on GMS hardware | Not available until the DPC is approved. |
+
+Do not try to work around the block. It is doing its job, and an approach that
+defeats it is grounds for rejection when you do apply.
 
 ### Using ADB (Development)
 
@@ -489,15 +511,22 @@ that is otherwise version-correct:
 Device Owner behaviour varies by OEM and Android version, so this table records
 what has actually been *run*, not what ought to work.
 
-| Device | Android | Agent | QR → Device Owner | Server enrollment | Policy applied | Source |
+| Device | Android | DPC | QR → Device Owner | Server enrollment | Policy applied | Source |
 |---|---|---|---|---|---|---|
-| Samsung SM-X210 | 16 | v0.4.0 | ⚠️ inconsistent across attempts | ❌ | ❌ | community report |
+| Samsung SM-X210 | 16 | OpenMDM v0.4.0 | ❌ blocked by Play Protect (accepted once, blocked on later attempts) | ❌ | ❌ | community report |
+| Samsung SM-X210 | 16 | *control:* Google TestDPC 9.0.12 | ✅ | n/a | n/a | same reporter, same host and network |
+
+The TestDPC row is a control, not an OpenMDM result. It is what makes the row
+above it readable: the hardware, the setup wizard, the QR flow, the hosting and
+the network are all fine, and what fails is the DPC identity — see
+[Play Protect and the DPC allowlist](#play-protect-and-the-dpc-allowlist).
 
 No maintainer-run end-to-end verification on physical hardware is recorded yet —
 this is exactly the gap the development-status note at the top of this README
-refers to. The single community report above also predates the provisioning fix
-in which enrollment is queued from the policy-compliance activity rather than
-from the `PROFILE_PROVISIONING_COMPLETE` broadcast alone.
+refers to. The community report above also predates the fix in which enrollment
+is queued from the policy-compliance activity rather than from the
+`PROFILE_PROVISIONING_COMPLETE` broadcast alone; note that its enrollment column
+was never reached, because provisioning was blocked before the agent ran.
 
 If you complete a run — or fail one — please open an issue with the device model,
 Android version, agent version, and the logcat output from the tags listed under
