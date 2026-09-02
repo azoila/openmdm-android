@@ -28,17 +28,20 @@ import com.openmdm.library.policy.LauncherConfig
 import com.openmdm.library.policy.PolicyMapper
 import com.openmdm.library.policy.WifiNetworkConfig
 import com.openmdm.library.policy.WifiSecurityType
+import com.openmdm.library.telemetry.MdmTelemetryHolder
 import android.content.ComponentName
 import android.util.Log
 import com.google.gson.Gson
 import com.openmdm.agent.data.local.dao.CommandDao
 import com.openmdm.agent.data.local.entity.CommandEntity
+import com.openmdm.agent.provisioning.ProvisioningHandoff
 import com.openmdm.agent.ui.launcher.LauncherActivity
 import com.openmdm.agent.worker.CommandWorker
 import com.openmdm.agent.worker.WorkScheduler
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
@@ -76,6 +79,9 @@ class MDMService : LifecycleService() {
 
     @Inject
     lateinit var commandDao: CommandDao
+
+    @Inject
+    lateinit var provisioningStore: ProvisioningStore
 
     private var heartbeatJob: Job? = null
     private var heartbeatInterval: Long = DEFAULT_HEARTBEAT_INTERVAL
@@ -151,6 +157,10 @@ class MDMService : LifecycleService() {
         }
         heartbeatStarted = true
 
+        // Before anything else: a device that was provisioned but never enrolled
+        // has nothing to heartbeat *with*. Re-arm it.
+        recoverProvisioningEnrollment()
+
         // WorkManager is the reliable background heartbeat: it survives
         // process death and low-memory kills. But its periodic floor is 15
         // minutes, so a sub-minute policy interval is silently clamped — fine
@@ -172,6 +182,42 @@ class MDMService : LifecycleService() {
         // while the foreground service is alive. Each tick is a real heartbeat,
         // whose response carries pending commands (drained in sendHeartbeat).
         startPollLoopIfPolling()
+    }
+
+    /**
+     * Re-arm an enrollment that provisioning queued but never completed.
+     *
+     * Provisioning hands the device its server URL and queues an enrollment
+     * (see [ProvisioningHandoff]). Both of the intents that carry that config
+     * arrive inside the setup wizard, on a device that may have no network yet
+     * and a WorkManager job that can be cancelled with the rest of setup. When
+     * that goes wrong the result is the bad one: fully managed, knows its
+     * server, and is not talking to it.
+     *
+     * So on every service start — which includes every boot — a device that was
+     * provisioned for a server and is still not enrolled gets its enrollment
+     * queued again. `ExistingWorkPolicy.KEEP` makes this free when the original
+     * work is still alive, so the common case costs one flow read.
+     */
+    private fun recoverProvisioningEnrollment() {
+        lifecycleScope.launch {
+            // On a read failure, assume enrolled: a spurious enrollment attempt
+            // against a live device is worse than a delayed recovery, which the
+            // next service start will do anyway.
+            val isEnrolled = runCatching { mdmRepository.enrollmentState.first().isEnrolled }
+                .getOrDefault(true)
+            val hasProvisionedServer = runCatching { provisioningStore.isProvisioned }
+                .getOrDefault(false)
+
+            if (!shouldRecoverProvisioningEnrollment(isEnrolled, hasProvisionedServer)) return@launch
+
+            Log.i(TAG, "Provisioned but not enrolled; re-arming provisioning enrollment")
+            MdmTelemetryHolder.event(
+                "provisioning_enrollment_rearmed",
+                mapOf("source" to ProvisioningHandoff.SOURCE_SERVICE_RECOVERY),
+            )
+            WorkScheduler.enqueueProvisioningEnrollment(this@MDMService)
+        }
     }
 
     /**
@@ -1437,6 +1483,21 @@ class MDMService : LifecycleService() {
          */
         internal fun shouldRunPollLoop(provider: String?): Boolean =
             provider == null || provider == PUSH_PROVIDER_POLLING
+
+        /**
+         * Whether a service start should re-queue the post-provisioning
+         * enrollment.
+         *
+         * Exactly one situation calls for it: the device was told which server
+         * it belongs to during provisioning, and it still has not enrolled.
+         * Anything else is either already managed or has nothing to enroll
+         * against — a device with no provisioned server URL has no server to
+         * reach, and no amount of retrying invents one.
+         */
+        internal fun shouldRecoverProvisioningEnrollment(
+            isEnrolled: Boolean,
+            hasProvisionedServer: Boolean,
+        ): Boolean = !isEnrolled && hasProvisionedServer
 
         const val ACTION_START = "com.openmdm.agent.START"
         const val ACTION_STOP = "com.openmdm.agent.STOP"
