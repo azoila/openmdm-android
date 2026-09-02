@@ -6,10 +6,8 @@ import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import com.openmdm.agent.R
-import com.openmdm.agent.data.ProvisioningStore
-import com.openmdm.agent.worker.WorkScheduler
+import com.openmdm.agent.provisioning.ProvisioningHandoff
 import com.openmdm.library.device.WorkProfileManager
-import com.openmdm.library.enrollment.ManagedProvisioning
 import com.openmdm.library.telemetry.MdmTelemetryHolder
 
 /**
@@ -45,15 +43,15 @@ class MDMDeviceAdminReceiver : DeviceAdminReceiver() {
     /**
      * The platform has finished provisioning us as Device Owner.
      *
-     * This is where the admin extras bundle finally arrives — the server URL, the
-     * enrollment token, the policy id that the operator embedded in the QR code
-     * or zero-touch configuration. **It is the only channel through which a
-     * provisioned device learns which server it belongs to.**
+     * This carries the admin extras bundle — the server URL, the enrollment
+     * token, the policy id that the operator embedded in the QR code or
+     * zero-touch configuration.
      *
-     * Before this override existed, the callback was not implemented at all: a
-     * device provisioned by QR or zero-touch became Device Owner and then sat
-     * there, extras dropped on the floor, waiting for someone to type an
-     * enrollment code into it by hand. Provisioning looked supported and was not.
+     * It is no longer the *only* channel: on API 31+ this broadcast is sent at
+     * the setup wizard's finalization step, which a wizard that aborts earlier
+     * never reaches, so [ProvisioningHandoff] is also driven from
+     * [com.openmdm.agent.provisioning.PolicyComplianceActivity]. Whichever
+     * arrives first wins; adoption is idempotent, so both arriving is fine.
      *
      * We persist the config and hand off to WorkManager rather than enrolling
      * inline: a broadcast receiver has a few seconds before the system may kill
@@ -65,7 +63,11 @@ class MDMDeviceAdminReceiver : DeviceAdminReceiver() {
     override fun onProfileProvisioningComplete(context: Context, intent: Intent) {
         super.onProfileProvisioningComplete(context, intent)
 
-        val config = ManagedProvisioning.extractConfig(intent)
+        val config = ProvisioningHandoff.adopt(
+            context,
+            intent,
+            ProvisioningHandoff.SOURCE_PROVISIONING_COMPLETE,
+        )
 
         if (config?.serverUrl == null) {
             // Legitimate: a device provisioned without OpenMDM extras. It is
@@ -83,8 +85,6 @@ class MDMDeviceAdminReceiver : DeviceAdminReceiver() {
             return
         }
 
-        ProvisioningStore(context).save(config)
-
         // A work profile is created *disabled*. Until we enable it, its apps do
         // not appear in the launcher and the user is left with a half-set-up
         // phone. This is the one step a work-profile provision must not skip —
@@ -96,7 +96,6 @@ class MDMDeviceAdminReceiver : DeviceAdminReceiver() {
                 .onFailure { Log.w(TAG, "Failed to enable work profile", it) }
         }
 
-        Log.i(TAG, "Provisioned for ${config.serverUrl}; scheduling enrollment")
         MdmTelemetryHolder.event(
             "provisioning_complete",
             mapOf(
@@ -105,8 +104,6 @@ class MDMDeviceAdminReceiver : DeviceAdminReceiver() {
                 "has_policy_id" to (config.policyId != null),
             ),
         )
-
-        WorkScheduler.enqueueProvisioningEnrollment(context)
     }
 
     override fun onPasswordChanged(context: Context, intent: Intent, userHandle: android.os.UserHandle) {

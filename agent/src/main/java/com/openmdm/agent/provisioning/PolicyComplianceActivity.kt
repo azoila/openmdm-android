@@ -3,7 +3,6 @@ package com.openmdm.agent.provisioning
 import android.app.Activity
 import android.os.Bundle
 import android.util.Log
-import com.openmdm.library.enrollment.ManagedProvisioning
 import com.openmdm.library.telemetry.MdmTelemetryHolder
 
 /**
@@ -13,19 +12,26 @@ import com.openmdm.library.telemetry.MdmTelemetryHolder
  * launches this activity so the DPC can finish setting itself up and confirm it
  * is happy. Returning anything other than `RESULT_OK` fails the provisioning.
  *
- * Enrollment is deliberately **not** driven from here. It is kicked off from
- * [com.openmdm.agent.receiver.MDMDeviceAdminReceiver.onProfileProvisioningComplete],
- * which fires whether or not this activity is shown, and which runs even if the
- * user backs out of the setup wizard's final screens. Making enrollment depend on
- * an activity the user can dismiss would mean a device that is Device Owner but
- * never talks to the server — managed, and unmanageable.
+ * The admin extras bundle rides on this intent, and this is the *earliest* point
+ * at which the DPC is already Device Owner and holds it. So this is where the
+ * device learns which server it belongs to and queues its enrollment — see
+ * [ProvisioningHandoff] for why that no longer waits for the
+ * `PROFILE_PROVISIONING_COMPLETE` broadcast alone.
+ *
+ * Enrollment itself is *not* run here. Handing off to WorkManager keeps this
+ * activity to the few milliseconds the setup wizard is waiting on, and means a
+ * device provisioned out of network range still enrolls when it finds a network.
  */
 class PolicyComplianceActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val config = ManagedProvisioning.extractConfig(intent)
+        val config = ProvisioningHandoff.adopt(
+            this,
+            intent,
+            ProvisioningHandoff.SOURCE_POLICY_COMPLIANCE,
+        )
 
         Log.i(TAG, "Policy compliance screen; server=${config?.serverUrl ?: "not supplied"}")
         MdmTelemetryHolder.event(
